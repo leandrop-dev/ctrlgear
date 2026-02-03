@@ -13,9 +13,6 @@ use crate::{Error, Result};
 /// Product ID for Rival 3 Wireless (2.4 GHz mode)
 pub const PRODUCT_ID: u16 = 0x1830;
 
-/// USB endpoint for communication
-const ENDPOINT: u16 = 3;
-
 /// TrueMove Air sensor DPI mapping table
 /// Maps DPI values (100-18000 in steps of 100) to device byte values
 const DPI_MAPPING: &[(u16, u8)] = &[

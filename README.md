@@ -1,14 +1,15 @@
 # SteelCtl
 
-A Rust utility for managing SteelSeries hardware, with initial support for the Rival 3 Wireless mouse.
+A Rust utility for managing SteelSeries gaming peripherals.
 
 ## Features
 
-- **DPI Configuration**: Set up to 5 DPI presets (100-18000 in steps of 100)
+- **DPI Configuration**: Set multiple DPI presets with device-specific ranges
 - **Polling Rate**: Configure USB polling rate (125/250/500/1000 Hz)
-- **Button Mapping**: Remap all 6 buttons (mouse buttons, DPI switch, scroll, disable)
-- **Battery Status**: Check battery level and charging status
+- **Button Mapping**: Remap buttons with support for mouse buttons, DPI switch, scroll emulation, and disable
+- **Battery Status**: Check battery level and charging status (wireless devices)
 - **Settings Persistence**: Save settings to device memory
+- **Device Discovery**: List all connected SteelSeries devices and their HID interfaces
 
 ## Installation
 
@@ -39,6 +40,9 @@ The binary will be available at `target/release/steelctl`.
 ## Usage
 
 ```bash
+# List all connected SteelSeries devices
+steelctl list-devices
+
 # Set DPI presets
 steelctl dpi "400,800,1600,3200"
 
@@ -48,7 +52,7 @@ steelctl polling-rate 1000
 # Configure button mapping
 steelctl buttons "button3=scrollup,button6=dpi"
 
-# Check battery status
+# Check battery status (wireless devices)
 steelctl battery
 
 # Save settings to device memory
@@ -111,7 +115,7 @@ The project is organized into several layers:
 
 ### 3. Device Layer (`device/`)
 - Trait-based abstraction for different device types
-- Device-specific implementations (e.g., Rival 3 Wireless)
+- Device-specific implementations with protocol commands
 - Handles sensor-specific mappings (e.g., DPI tables)
 
 ### 4. CLI Layer (`main.rs`)
@@ -120,8 +124,19 @@ The project is organized into several layers:
 
 ## Supported Devices
 
-Currently supported:
-- **SteelSeries Rival 3 Wireless** (Product ID: 0x1830)
+| Device | Product ID | DPI | Polling Rate | Buttons | Battery | RGB |
+|--------|------------|-----|--------------|---------|---------|-----|
+| **Rival 3 Wireless** | 0x1830 | ✅ 100-18000 | ✅ | ✅ 6 buttons | ✅ | ❌ |
+
+**Legend:**
+- ✅ Supported
+- ❌ Not available on hardware
+- ⚠️ Hardware supports, not yet implemented
+
+To check which SteelSeries devices are connected to your system:
+```bash
+steelctl list-devices
+```
 
 ## Development
 
@@ -139,7 +154,7 @@ cargo doc --open
 
 ## License
 
-MIT OR Apache-2.0
+WTFPL - Do What The Fuck You Want To Public License
 
 ## Contributing
 
@@ -161,12 +176,19 @@ If you get permission errors when accessing the device:
 
 ### Device Not Found
 
-Verify your device is connected and in 2.4 GHz wireless mode (not Bluetooth):
-```bash
-lsusb | grep 1038
-```
+1. Check if your device is connected:
+   ```bash
+   steelctl list-devices
+   ```
 
-You should see a line like:
-```
-Bus 001 Device 005: ID 1038:1830 SteelSeries ApS SteelSeries Rival 3 Wireless
-```
+2. For wireless mice, ensure they're in 2.4 GHz mode (not Bluetooth)
+
+3. Verify the device is detected by the system:
+   ```bash
+   lsusb | grep 1038
+   ```
+
+4. Check which HID interfaces are available:
+   ```bash
+   ls -l /dev/hidraw*
+   ```

@@ -41,6 +41,8 @@ enum Commands {
     Save,
     /// Show device information
     Info,
+    /// List all SteelSeries HID devices and interfaces
+    ListDevices,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -48,6 +50,11 @@ fn main() -> anyhow::Result<()> {
 
     // Initialize HID API
     let api = hidapi::HidApi::new()?;
+
+    // Handle commands that don't require opening a device
+    if matches!(cli.command, Commands::ListDevices) {
+        return list_devices(&api);
+    }
 
     // Open Rival 3 Wireless device
     let hid = SteelSeriesHid::open(&api, STEELSERIES_VENDOR_ID, PRODUCT_ID)?;
@@ -89,6 +96,50 @@ fn main() -> anyhow::Result<()> {
             println!("Vendor ID: 0x{:04x}", device.vendor_id());
             println!("Product ID: 0x{:04x}", device.product_id());
         }
+        Commands::ListDevices => unreachable!(), // Handled before device opening
+    }
+
+    Ok(())
+}
+
+fn list_devices(api: &hidapi::HidApi) -> anyhow::Result<()> {
+    println!("SteelSeries HID Devices:\n");
+
+    let mut found_any = false;
+
+    for device in api.device_list() {
+        if device.vendor_id() == STEELSERIES_VENDOR_ID {
+            found_any = true;
+            println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            println!("Product ID:      0x{:04x}", device.product_id());
+            println!(
+                "Product:         {}",
+                device.product_string().unwrap_or("N/A")
+            );
+            println!(
+                "Manufacturer:    {}",
+                device.manufacturer_string().unwrap_or("N/A")
+            );
+            println!("Path:            {}", device.path().to_string_lossy());
+            println!("Interface:       {}", device.interface_number());
+            println!("Usage Page:      0x{:04x}", device.usage_page());
+            println!("Usage:           0x{:04x}", device.usage());
+
+            // Highlight the configuration interface
+            if device.usage_page() == 0xffc0 {
+                println!("                 ⮕ Configuration interface (used by steelctl)");
+            }
+
+            println!();
+        }
+    }
+
+    if !found_any {
+        println!("No SteelSeries devices found.");
+        println!("\nTroubleshooting:");
+        println!("  1. Make sure your device is connected");
+        println!("  2. For wireless mice, ensure they're in 2.4 GHz mode (not Bluetooth)");
+        println!("  3. Check USB cable/receiver connection");
     }
 
     Ok(())

@@ -12,18 +12,37 @@ pub struct SteelSeriesHid {
 }
 
 impl SteelSeriesHid {
-    /// Open a SteelSeries device
+    /// Open a SteelSeries device on the correct interface
+    ///
+    /// SteelSeries mice have multiple HID interfaces. We need to open the one
+    /// with usage_page 0xffc0 which is the configuration interface.
     pub fn open(
         api: &HidApi,
         vendor_id: u16,
         product_id: u16,
     ) -> Result<Self> {
-        let device = api
-            .open(vendor_id, product_id)
-            .map_err(|e| Error::DeviceNotFound(format!(
+        // Find the correct interface (usage_page 0xffc0 for SteelSeries config)
+        let device_path = api
+            .device_list()
+            .find(|dev| {
+                dev.vendor_id() == vendor_id
+                    && dev.product_id() == product_id
+                    && dev.usage_page() == 0xffc0
+            })
+            .map(|dev| dev.path())
+            .ok_or_else(|| {
+                Error::DeviceNotFound(format!(
+                    "SteelSeries device {:04x}:{:04x} not found or wrong interface",
+                    vendor_id, product_id
+                ))
+            })?;
+
+        let device = api.open_path(device_path).map_err(|e| {
+            Error::DeviceNotFound(format!(
                 "Failed to open device {:04x}:{:04x}: {}",
                 vendor_id, product_id, e
-            )))?;
+            ))
+        })?;
 
         Ok(SteelSeriesHid {
             device,
