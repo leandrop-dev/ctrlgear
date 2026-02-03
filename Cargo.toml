@@ -1,0 +1,22 @@
+[package]
+name = "steelctl"
+version = "0.1.0"
+edition = "2021"
+authors = ["Leandro Paixão"]
+description = "A Rust utility for managing SteelSeries hardware"
+license = "WTFPL"
+
+[[bin]]
+name = "steelctl"
+path = "src/main.rs"
+
+[dependencies]
+hidapi = "2.6"
+anyhow = "1.0"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+
+[dev-dependencies]
+mockall = "0.13"
