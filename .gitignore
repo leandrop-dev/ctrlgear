@@ -21,3 +21,12 @@ Thumbs.db
 
 # Added by cargo
 /target
+
+# makepkg build artifacts
+/pkg/
+/src/
+*.pkg.tar.*
+*.log
+
+# Claude Mallet project-local state
+/.mallet/

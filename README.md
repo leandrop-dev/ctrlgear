@@ -15,16 +15,21 @@ A Rust utility for managing SteelSeries gaming peripherals.
 
 ### Prerequisites
 
-On Linux, you may need to set up udev rules for USB device access:
+On Linux, you need a udev rule granting access to SteelSeries' HID devices. This is a one-time setup per machine — the rule matches on vendor ID (`1038`, shared across the whole SteelSeries product line), so it does not need to be redone when you plug in a different or newer SteelSeries device.
+
+`udev/70-steelseries.rules` in this repo is the canonical copy of the rule (the `70-` prefix matters — see the comment in the file):
+
+```
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", TAG+="uaccess"
+```
+
+`TAG+="uaccess"` hands access to whoever is logged in at the physical seat (via `systemd-logind`), rather than making the device world-read/writable with `MODE="0666"` — no group membership or extra setup required.
+
+You can install it manually, or let `make install` / the AUR package below do it for you:
 
 ```bash
-# Create a udev rule for SteelSeries devices
-sudo tee /etc/udev/rules.d/99-steelseries.rules << EOF
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", MODE="0666"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", MODE="0666"
-EOF
-
-# Reload udev rules
+sudo cp udev/70-steelseries.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
@@ -36,6 +41,22 @@ cargo build --release
 ```
 
 The binary will be available at `target/release/steelctl`.
+
+### Install (binary + udev rule)
+
+```bash
+sudo make install
+```
+
+Installs the binary to `/usr/local/bin` and the udev rule to `/etc/udev/rules.d/`, then reloads udev — one command instead of the manual steps above. `sudo make uninstall` reverses it. Override `PREFIX` or `UDEV_RULES_DIR` if you need a different layout.
+
+### Arch Linux / CachyOS (PKGBUILD)
+
+```bash
+makepkg -si
+```
+
+Builds and installs `steelctl` as a proper pacman package (binary in `/usr/bin`, udev rule in `/usr/lib/udev/rules.d/`, license and docs under `/usr/share`), so `pacman -R steelctl` cleanly removes everything, including the udev rule.
 
 ## Usage
 
@@ -94,7 +115,11 @@ steelctl/
 │   └── device/
 │       ├── mod.rs                 # Device trait definitions
 │       └── rival3_wireless.rs     # Rival 3 Wireless implementation
+├── udev/
+│   └── 70-steelseries.rules       # Vendor-wide HID access rule (must sort before 73-seat-late.rules)
 ├── Cargo.toml
+├── Makefile                       # sudo make install / uninstall
+├── PKGBUILD                       # Arch Linux / CachyOS package
 ├── README.md
 └── BUTTON_MAPPING.md              # Detailed button mapping guide
 ```

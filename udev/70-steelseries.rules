@@ -1,0 +1,18 @@
+# Grant HID access to SteelSeries devices for the active logged-in user.
+#
+# Vendor ID 1038 covers the entire SteelSeries product line, so this rule
+# does not need to be updated when a new SteelSeries device is plugged in.
+#
+# TAG+="uaccess" hands access to whoever is logged in at the physical seat
+# (via systemd-logind), instead of making the device world-read/writable
+# with MODE="0666". No group membership or extra setup required.
+#
+# Filename matters: /usr/lib/udev/rules.d/73-seat-late.rules is what
+# actually writes the ACL, and only for devices already tagged
+# TAG=="uaccess" by the time it runs. udev concatenates all rule files in
+# filename-sorted order and evaluates them as one pass per event, so this
+# file must sort before "73-" or the ACL is silently never applied (the
+# tag still shows up via `udevadm info`, but `getfacl` stays empty).
+
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1038", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1038", TAG+="uaccess"
