@@ -1,5 +1,5 @@
 [package]
-name = "steelctl-cli"
+name = "ctrlgear-cli"
 description = "Command-line interface for managing SteelSeries hardware"
 version.workspace = true
 edition.workspace = true
@@ -7,11 +7,11 @@ authors.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "steelctl-cli"
+name = "ctrlgear-cli"
 path = "src/main.rs"
 
 [dependencies]
-steelctl-core = { path = "../core" }
+ctrlgear-core = { path = "../core" }
 hidapi = "2.6"
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }

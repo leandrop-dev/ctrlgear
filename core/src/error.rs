@@ -1,8 +1,8 @@
-//! Error types for SteelCtl
+//! Error types for CtrlGear
 
 use thiserror::Error;
 
-/// Result type alias for SteelCtl operations
+/// Result type alias for CtrlGear operations
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Errors that can occur during device operations

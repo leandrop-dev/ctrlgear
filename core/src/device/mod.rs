@@ -1,5 +1,6 @@
 //! Device implementations for SteelSeries hardware
 
+pub mod arctis_nova_7;
 pub mod rival3_wireless;
 
 use crate::Result;

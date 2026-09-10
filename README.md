@@ -1,6 +1,6 @@
-# SteelCtl
+# CtrlGear
 
-A Rust utility for managing SteelSeries gaming peripherals.
+A Rust utility for managing SteelSeries gaming peripherals — CLI and desktop GUI. Unofficial; not affiliated with or endorsed by SteelSeries.
 
 ## Features
 
@@ -40,15 +40,15 @@ sudo udevadm trigger
 cargo build --release
 ```
 
-This builds the whole workspace. The CLI binary will be available at `target/release/steelctl-cli`; the GUI binary (see [GUI](#gui) below) at `target/release/steelctl`.
+This builds the whole workspace. The CLI binary will be available at `target/release/ctrlgear-cli`; the GUI binary (see [GUI](#gui) below) at `target/release/ctrlgear`.
 
-### Install (binary + udev rule)
+### Install (CLI + GUI + udev rule)
 
 ```bash
 sudo make install
 ```
 
-Installs the CLI binary to `/usr/local/bin` and the udev rule to `/etc/udev/rules.d/`, then reloads udev — one command instead of the manual steps above. `sudo make uninstall` reverses it. Override `PREFIX` or `UDEV_RULES_DIR` if you need a different layout.
+Installs both the `ctrlgear-cli` binary and the `ctrlgear` GUI (with its desktop entry and icon) to `/usr/local/bin`/`/usr/local/share`, plus the udev rule to `/etc/udev/rules.d/`, then reloads udev — one command instead of the manual steps above. `sudo make uninstall` reverses it. Want just one? `sudo make install-cli` or `sudo make install-gui` (with matching `uninstall-cli`/`uninstall-gui`). Override `PREFIX`, `DATADIR`, or `UDEV_RULES_DIR` if you need a different layout.
 
 ### Arch Linux / CachyOS (PKGBUILD)
 
@@ -56,86 +56,90 @@ Installs the CLI binary to `/usr/local/bin` and the udev rule to `/etc/udev/rule
 makepkg -si
 ```
 
-Builds and installs `steelctl-cli` as a proper pacman package (binary in `/usr/bin`, udev rule in `/usr/lib/udev/rules.d/`, license and docs under `/usr/share`), so `pacman -R steelctl-cli` cleanly removes everything, including the udev rule.
+Builds and installs `ctrlgear-cli` as a proper pacman package (binary in `/usr/bin`, udev rule in `/usr/lib/udev/rules.d/`, license and docs under `/usr/share`), so `pacman -R ctrlgear-cli` cleanly removes everything, including the udev rule.
 
 ## Usage
 
 ```bash
 # List all connected SteelSeries devices
-steelctl-cli list-devices
+ctrlgear-cli list-devices
 
 # Set DPI presets
-steelctl-cli dpi "400,800,1600,3200"
+ctrlgear-cli dpi "400,800,1600,3200"
 
 # Set polling rate
-steelctl-cli polling-rate 1000
+ctrlgear-cli polling-rate 1000
 
 # Configure button mapping
-steelctl-cli buttons "button3=scrollup,button6=dpi"
+ctrlgear-cli buttons "button3=scrollup,button6=dpi"
 
 # Check battery status (wireless devices)
-steelctl-cli battery
+ctrlgear-cli battery
 
 # Save settings to device memory
-steelctl-cli save
+ctrlgear-cli save
 
 # Show device information
-steelctl-cli info
+ctrlgear-cli info
 ```
 
 ### Button Mapping Examples
 
 ```bash
 # Reset to default mapping
-steelctl-cli buttons "default"
+ctrlgear-cli buttons "default"
 
 # Make side buttons scroll
-steelctl-cli buttons "button4=scrollup,button5=scrolldown"
+ctrlgear-cli buttons "button4=scrollup,button5=scrolldown"
 
 # Swap left and right buttons
-steelctl-cli buttons "button1=button2,button2=button1"
+ctrlgear-cli buttons "button1=button2,button2=button1"
 
 # Disable a button
-steelctl-cli buttons "button6=disabled"
+ctrlgear-cli buttons "button6=disabled"
 ```
 
 ## GUI
 
-An early-stage desktop GUI lives in `gui/`, built with [Slint](https://slint.dev). It shares all device/protocol logic with the CLI via the `steelctl-core` library crate — no duplicated HID handling.
+A desktop GUI lives in `gui/`, built with [Slint](https://slint.dev). It shares all device/protocol logic with the CLI via the `ctrlgear-core` library crate — no duplicated HID handling.
 
 ```bash
-cargo run --release -p steelctl-gui
+cargo run --release -p ctrlgear-gui
 ```
 
-Currently a minimal scaffold (device info, battery status, DPI apply) proving the workspace wiring; it is not yet packaged by `Makefile` or `PKGBUILD`.
+Sidebar + main content layout: a device list (name, battery, supported/unsupported) with a detail page per device for settings (currently DPI, for devices that support it). `sudo make install` (or `install-gui` alone) installs it with its desktop entry and icon — required on Wayland, since an app can't set its own taskbar/title-bar icon at runtime there; the desktop environment resolves it from the installed `.desktop` file instead. Not yet packaged by the PKGBUILD (CLI-only).
 
 See [BUTTON_MAPPING.md](BUTTON_MAPPING.md) for detailed button mapping documentation.
 
 ## Project Structure
 
 ```
-steelctl/
-├── core/                           # steelctl-core: device/protocol library, no UI deps
+ctrlgear/
+├── core/                           # ctrlgear-core: device/protocol library, no UI deps
 │   └── src/
 │       ├── lib.rs                   # Library root
 │       ├── error.rs                 # Error types
 │       ├── protocol.rs              # HID protocol constants
 │       ├── hid.rs                   # HID communication wrapper
 │       ├── buttons.rs               # Button mapping logic
+│       ├── registry.rs              # Device discovery: product ID → concrete device
 │       └── device/
 │           ├── mod.rs                # Device trait definitions
-│           └── rival3_wireless.rs    # Rival 3 Wireless implementation
-├── cli/                             # steelctl-cli: command-line interface (clap)
+│           ├── rival3_wireless.rs    # Rival 3 Wireless implementation
+│           └── arctis_nova_7.rs      # Arctis Nova 7 Wireless implementation (battery only)
+├── cli/                             # ctrlgear-cli: command-line interface (clap)
 │   └── src/main.rs
-├── gui/                             # steelctl: desktop GUI (Slint)
+├── gui/                             # ctrlgear: desktop GUI (Slint)
 │   ├── build.rs
 │   ├── ui/main.slint
-│   └── src/main.rs
+│   ├── src/main.rs
+│   ├── assets/app-icon.svg          # original app icon (not SteelSeries branding)
+│   └── packaging/ctrlgear.desktop   # desktop entry (needed for the icon on Wayland)
 ├── udev/
 │   └── 70-steelseries.rules       # Vendor-wide HID access rule (must sort before 73-seat-late.rules)
 ├── Cargo.toml                     # workspace manifest
-├── Makefile                       # sudo make install / uninstall
-├── PKGBUILD                       # Arch Linux / CachyOS package
+├── Makefile                       # sudo make install / uninstall [-gui]
+├── PKGBUILD                       # Arch Linux / CachyOS package (CLI only)
 ├── README.md
 └── BUTTON_MAPPING.md              # Detailed button mapping guide
 ```
@@ -144,24 +148,28 @@ steelctl/
 
 The project is a Cargo workspace with three crates:
 
-### 1. `steelctl-core` (`core/`)
-All device/protocol logic, with no CLI or UI dependencies — shared by both `steelctl-cli` and `steelctl` (GUI).
+### 1. `ctrlgear-core` (`core/`)
+All device/protocol logic, with no CLI or UI dependencies — shared by both `ctrlgear-cli` and `ctrlgear` (GUI).
 
 - **Protocol layer** (`protocol.rs`): HID report types and command constants; maps high-level concepts (polling rate, battery status) to byte values
 - **HID communication layer** (`hid.rs`): wraps the `hidapi` library, handles low-level USB HID communication, implements command delays to prevent device overload
 - **Device layer** (`device/`): trait-based abstraction for different device types, device-specific implementations with protocol commands, sensor-specific mappings (e.g., DPI tables)
+- **Registry** (`registry.rs`): maps a connected device's product ID to its concrete implementation; `discover()` enumerates connected SteelSeries devices for UI consumption (used by the GUI's device list)
 
-### 2. `steelctl-cli` (`cli/`)
-Command-line interface using `clap`; parses user input and calls into `steelctl-core`.
+### 2. `ctrlgear-cli` (`cli/`)
+Command-line interface using `clap`; parses user input and calls into `ctrlgear-core`.
 
-### 3. `steelctl` GUI (`gui/`)
-Desktop interface using [Slint](https://slint.dev); calls the same `steelctl-core` device traits as the CLI.
+### 3. `ctrlgear` GUI (`gui/`)
+Desktop interface using [Slint](https://slint.dev); calls the same `ctrlgear-core` device traits as the CLI.
 
 ## Supported Devices
 
 | Device | Product ID | DPI | Polling Rate | Buttons | Battery | RGB |
 |--------|------------|-----|--------------|---------|---------|-----|
 | **Rival 3 Wireless** | 0x1830 | ✅ 100-18000 | ✅ | ✅ 6 buttons | ✅ | ❌ |
+| **Arctis Nova 7 Wireless** | 0x22a1 | n/a | n/a | n/a | ✅ | ❌ |
+
+Other Arctis Nova 7 product IDs (older discrete 0-4 battery firmware, Nova 7X variants) are not implemented — see `core/src/device/arctis_nova_7.rs`.
 
 **Legend:**
 - ✅ Supported
@@ -170,7 +178,7 @@ Desktop interface using [Slint](https://slint.dev); calls the same `steelctl-cor
 
 To check which SteelSeries devices are connected to your system:
 ```bash
-steelctl-cli list-devices
+ctrlgear-cli list-devices
 ```
 
 ## Development
@@ -213,7 +221,7 @@ If you get permission errors when accessing the device:
 
 1. Check if your device is connected:
    ```bash
-   steelctl-cli list-devices
+   ctrlgear-cli list-devices
    ```
 
 2. For wireless mice, ensure they're in 2.4 GHz mode (not Bluetooth)

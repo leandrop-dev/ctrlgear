@@ -1085,6 +1085,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctrlgear-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ctrlgear-core",
+ "hidapi",
+]
+
+[[package]]
+name = "ctrlgear-core"
+version = "0.1.0"
+dependencies = [
+ "hidapi",
+ "mockall",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "ctrlgear-gui"
+version = "0.1.0"
+dependencies = [
+ "ctrlgear-core",
+ "hidapi",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "cursor-icon"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4747,37 +4778,6 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
-
-[[package]]
-name = "steelctl-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "hidapi",
- "steelctl-core",
-]
-
-[[package]]
-name = "steelctl-core"
-version = "0.1.0"
-dependencies = [
- "hidapi",
- "mockall",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "steelctl-gui"
-version = "0.1.0"
-dependencies = [
- "hidapi",
- "slint",
- "slint-build",
- "steelctl-core",
-]
 
 [[package]]
 name = "strict-num"

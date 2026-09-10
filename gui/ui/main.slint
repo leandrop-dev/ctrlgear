@@ -1,43 +1,414 @@
-import { Button, LineEdit, VerticalBox, HorizontalBox } from "std-widgets.slint";
+import { Button, LineEdit, ScrollView, Palette } from "std-widgets.slint";
+
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <bool> active: false;
+    callback clicked;
+
+    height: 38px;
+    border-radius: 8px;
+    background: active ? #f5730022 : (touch.has-hover ? Palette.foreground.with-alpha(0.06) : transparent);
+    animate background { duration: 120ms; easing: ease-out; }
+
+    touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        Text {
+            text: root.icon;
+            font-size: 14px;
+            vertical-alignment: center;
+            color: active ? #f57300 : Palette.foreground.with-alpha(0.75);
+        }
+        Text {
+            text: root.label;
+            font-size: 13px;
+            font-weight: active ? 700 : 600;
+            vertical-alignment: center;
+            color: active ? #f57300 : Palette.foreground.with-alpha(0.85);
+        }
+    }
+}
+
+component Sidebar inherits Rectangle {
+    callback show-about();
+
+    width: 190px;
+    background: Palette.background.darker(0.05);
+    border-width: 1px;
+    border-color: Palette.foreground.with-alpha(0.08);
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 6px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            Image { source: @image-url("../assets/app-icon.svg"); width: 26px; height: 26px; }
+            Text { text: "CtrlGear"; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+        }
+
+        Rectangle { height: 16px; }
+
+        Text {
+            text: "LIBRARY";
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: Palette.foreground.with-alpha(0.4);
+        }
+        NavItem { label: "Devices"; icon: "▤"; active: true; }
+
+        Rectangle { vertical-stretch: 1; }
+
+        NavItem { label: "About"; icon: "ⓘ"; clicked => { root.show-about(); } }
+    }
+}
+
+export struct DeviceCardData {
+    name: string,
+    initial: string,
+    product-id-hex: string,
+    supported: bool,
+    has-battery: bool,
+    battery-percent: int,
+    charging: bool,
+    status: string,
+    accent-start: color,
+    accent-end: color,
+}
+
+component BatteryBadge inherits Rectangle {
+    in property <int> percent;
+    in property <bool> charging;
+    in property <bool> on-dark: false;
+    property <color> tint: percent < 20 ? #e05050 : percent < 40 ? #d19a66 : #4caf50;
+
+    border-radius: 11px;
+    background: on-dark ? #ffffff33 : tint.with-alpha(0.15);
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        Text {
+            text: (charging ? "⚡ " : "") + percent + "%";
+            color: on-dark ? white : tint;
+            font-size: 12px;
+            font-weight: 600;
+        }
+    }
+}
+
+component DeviceRow inherits Rectangle {
+    in property <DeviceCardData> data;
+    callback clicked;
+
+    height: 84px;
+    border-radius: 12px;
+    clip: true;
+    background: @linear-gradient(120deg, data.accent-start, data.accent-end);
+    border-width: touch.has-hover ? 2px : 0px;
+    border-color: #ffffff55;
+    animate border-width { duration: 120ms; easing: ease-out; }
+
+    touch := TouchArea {
+        mouse-cursor: data.supported ? pointer : default;
+        clicked => { if data.supported { root.clicked(); } }
+    }
+
+    HorizontalLayout {
+        padding: 16px;
+        spacing: 14px;
+
+        Rectangle {
+            width: 52px;
+            height: 52px;
+            border-radius: 26px;
+            background: #ffffff26;
+            Text {
+                text: data.initial;
+                color: white;
+                font-weight: 800;
+                font-size: 20px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 5px;
+            Text { text: data.name; color: white; font-size: 16px; font-weight: 800; overflow: elide; }
+            HorizontalLayout {
+                spacing: 6px;
+                Rectangle {
+                    border-radius: 8px;
+                    background: #ffffff26;
+                    HorizontalLayout {
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        padding-top: 2px;
+                        padding-bottom: 2px;
+                        Text {
+                            text: data.supported ? "Supported" : "Not yet supported";
+                            color: white;
+                            font-size: 10px;
+                            font-weight: 600;
+                        }
+                    }
+                }
+                if !data.has-battery && data.status != "": Text {
+                    text: data.status;
+                    color: #ffe0e0;
+                    font-size: 10px;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 5px;
+            if data.has-battery: BatteryBadge { percent: data.battery-percent; charging: data.charging; on-dark: true; }
+            Text {
+                text: touch.has-hover ? (data.supported ? "Configure ›" : "Not available") : "ID " + data.product-id-hex;
+                color: #ffffffcc;
+                font-size: 11px;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+component DeviceListPage inherits Rectangle {
+    in property <[DeviceCardData]> devices;
+    in property <bool> loading;
+    callback refresh();
+    callback select-device(int);
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 16px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            Text { text: "Devices"; font-size: 22px; font-weight: 800; vertical-alignment: center; horizontal-stretch: 1; }
+            Button { text: loading ? "Refreshing…" : "Refresh"; enabled: !loading; clicked => { root.refresh(); } }
+        }
+
+        Rectangle { height: 1px; background: Palette.foreground.with-alpha(0.08); }
+
+        if devices.length == 0 && !loading: VerticalLayout {
+            vertical-stretch: 1;
+            alignment: center;
+            spacing: 6px;
+            Text { text: "No SteelSeries devices found."; font-size: 14px; horizontal-alignment: center; color: Palette.foreground.with-alpha(0.6); }
+            Text { text: "Connect a device and press Refresh."; font-size: 12px; horizontal-alignment: center; color: Palette.foreground.with-alpha(0.45); }
+        }
+
+        if devices.length > 0: VerticalLayout {
+            vertical-stretch: 1;
+            spacing: 10px;
+            Text {
+                text: "CONNECTED";
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 1px;
+                color: Palette.foreground.with-alpha(0.4);
+            }
+            ScrollView {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    spacing: 12px;
+                    for card[i] in devices: DeviceRow {
+                        data: card;
+                        clicked => { root.select-device(i); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component DeviceDetailPage inherits Rectangle {
+    in property <string> name;
+    in property <string> product-id-hex;
+    in property <bool> supported;
+    in property <bool> supports-dpi;
+    in property <bool> has-battery;
+    in property <int> battery-percent;
+    in property <bool> charging;
+    in property <string> status;
+    in property <color> status-color: Palette.foreground;
+    in-out property <string> dpi-input;
+    callback back();
+    callback apply-dpi(string);
+
+    VerticalLayout {
+        padding: 18px;
+        spacing: 16px;
+
+        Button { text: "← Devices"; horizontal-stretch: 0; clicked => { root.back(); } }
+
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 4px;
+                Text { text: root.name; font-size: 20px; font-weight: 800; }
+                Text { text: "ID " + product-id-hex; font-size: 11px; color: Palette.foreground.with-alpha(0.6); }
+            }
+            if has-battery: BatteryBadge { percent: battery-percent; charging: charging; }
+        }
+
+        if !supported: Rectangle {
+            border-radius: 10px;
+            background: Palette.foreground.with-alpha(0.06);
+            VerticalLayout {
+                padding: 16px;
+                Text {
+                    text: "This device isn't supported yet.";
+                    wrap: word-wrap;
+                    color: Palette.foreground.with-alpha(0.7);
+                }
+            }
+        }
+
+        if supported && supports-dpi: Rectangle {
+            border-radius: 10px;
+            background: Palette.foreground.with-alpha(0.04);
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+                Text { text: "DPI presets"; font-weight: 700; font-size: 13px; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    LineEdit { text <=> root.dpi-input; placeholder-text: "400,800,1600"; horizontal-stretch: 1; }
+                    Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-dpi(root.dpi-input); } }
+                }
+                if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
+            }
+        }
+
+        if supported && !supports-dpi: Rectangle {
+            border-radius: 10px;
+            background: Palette.foreground.with-alpha(0.04);
+            VerticalLayout {
+                padding: 16px;
+                spacing: 6px;
+                Text { text: "No adjustable settings implemented yet for this device."; wrap: word-wrap; color: Palette.foreground.with-alpha(0.7); }
+                if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}
 
 export component MainWindow inherits Window {
-    title: "SteelCtl";
-    width: 360px;
-    height: 280px;
+    title: "CtrlGear";
+    icon: @image-url("../assets/app-icon.svg");
+    min-width: 560px;
+    min-height: 380px;
+    preferred-width: 760px;
+    preferred-height: 540px;
+    background: Palette.background;
 
-    in property <string> device-name: "No device connected";
-    in property <string> battery-status: "";
+    in-out property <[DeviceCardData]> devices: [];
+    in property <bool> loading: false;
+    in property <bool> showing-detail: false;
+
+    in property <string> detail-name: "";
+    in property <string> detail-product-id-hex: "";
+    in property <bool> detail-supported: false;
+    in property <bool> detail-supports-dpi: false;
+    in property <bool> detail-has-battery: false;
+    in property <int> detail-battery-percent: 0;
+    in property <bool> detail-charging: false;
+    in property <string> detail-status: "";
+    in property <color> detail-status-color: Palette.foreground;
     in-out property <string> dpi-input: "400,800,1600";
 
     callback refresh();
+    callback select-device(int);
+    callback back-to-grid();
     callback apply-dpi(string);
 
-    VerticalBox {
-        Text {
-            text: root.device-name;
-            font-size: 16px;
-            font-weight: 700;
+    HorizontalLayout {
+        Sidebar {
+            show-about => { about-popup.show(); }
         }
 
-        Text {
-            text: root.battery-status;
-        }
+        Rectangle {
+            horizontal-stretch: 1;
+            background: Palette.background;
 
-        HorizontalBox {
-            LineEdit {
-                text <=> root.dpi-input;
-                placeholder-text: "400,800,1600";
+            if !showing-detail: DeviceListPage {
+                devices: root.devices;
+                loading: root.loading;
+                refresh => { root.refresh(); }
+                select-device(i) => { root.select-device(i); }
             }
 
-            Button {
-                text: "Apply DPI";
-                clicked => { root.apply-dpi(root.dpi-input); }
+            if showing-detail: DeviceDetailPage {
+                name: root.detail-name;
+                product-id-hex: root.detail-product-id-hex;
+                supported: root.detail-supported;
+                supports-dpi: root.detail-supports-dpi;
+                has-battery: root.detail-has-battery;
+                battery-percent: root.detail-battery-percent;
+                charging: root.detail-charging;
+                status: root.detail-status;
+                status-color: root.detail-status-color;
+                dpi-input <=> root.dpi-input;
+                back => { root.back-to-grid(); }
+                apply-dpi(values) => { root.apply-dpi(values); }
             }
         }
+    }
 
-        Button {
-            text: "Refresh";
-            clicked => { root.refresh(); }
+    about-popup := PopupWindow {
+        width: 280px;
+        height: 168px;
+        x: root.width / 2 - self.width / 2;
+        y: root.height / 2 - self.height / 2;
+
+        Rectangle {
+            background: Palette.background;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Palette.foreground.with-alpha(0.15);
+
+            VerticalLayout {
+                padding: 18px;
+                spacing: 8px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    Image { source: @image-url("../assets/app-icon.svg"); width: 22px; height: 22px; }
+                    Text { text: "CtrlGear"; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+                }
+                Text {
+                    text: "Unofficial utility for configuring SteelSeries peripherals.";
+                    font-size: 12px;
+                    wrap: word-wrap;
+                    color: Palette.foreground.with-alpha(0.7);
+                }
+                Text {
+                    text: "Not affiliated with or endorsed by SteelSeries.";
+                    font-size: 11px;
+                    wrap: word-wrap;
+                    color: Palette.foreground.with-alpha(0.5);
+                }
+            }
         }
     }
 }

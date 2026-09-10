@@ -1,5 +1,5 @@
 [package]
-name = "steelctl-core"
+name = "ctrlgear-core"
 description = "Device protocol and HID logic for managing SteelSeries hardware"
 version.workspace = true
 edition.workspace = true
@@ -7,7 +7,7 @@ authors.workspace = true
 license.workspace = true
 
 [lib]
-name = "steelctl_core"
+name = "ctrlgear_core"
 path = "src/lib.rs"
 
 [dependencies]

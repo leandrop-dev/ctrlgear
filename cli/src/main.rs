@@ -1,15 +1,15 @@
 use clap::{Parser, Subcommand};
-use steelctl_core::buttons::ButtonMapping;
-use steelctl_core::device::rival3_wireless::{Rival3Wireless, PRODUCT_ID};
-use steelctl_core::device::{
+use ctrlgear_core::buttons::ButtonMapping;
+use ctrlgear_core::device::rival3_wireless::{Rival3Wireless, PRODUCT_ID};
+use ctrlgear_core::device::{
     ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice,
     WirelessDevice,
 };
-use steelctl_core::hid::SteelSeriesHid;
-use steelctl_core::protocol::STEELSERIES_VENDOR_ID;
+use ctrlgear_core::hid::SteelSeriesHid;
+use ctrlgear_core::protocol::STEELSERIES_VENDOR_ID;
 
 #[derive(Parser)]
-#[command(name = "steelctl")]
+#[command(name = "ctrlgear-cli")]
 #[command(author, version, about = "Manage SteelSeries hardware", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -127,7 +127,7 @@ fn list_devices(api: &hidapi::HidApi) -> anyhow::Result<()> {
 
             // Highlight the configuration interface
             if device.usage_page() == 0xffc0 {
-                println!("                 ⮕ Configuration interface (used by steelctl)");
+                println!("                 ⮕ Configuration interface (used by ctrlgear-cli)");
             }
 
             println!();

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=CtrlGear
+Comment=Unofficial utility for configuring SteelSeries peripherals
+Exec=ctrlgear
+Icon=ctrlgear
+Categories=Utility;HardwareSettings;
+Terminal=false
+StartupWMClass=ctrlgear
