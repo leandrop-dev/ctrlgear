@@ -1,0 +1,20 @@
+[package]
+name = "steelctl-gui"
+description = "Desktop GUI for managing SteelSeries hardware"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "steelctl"
+path = "src/main.rs"
+
+[dependencies]
+steelctl-core = { path = "../core" }
+hidapi = "2.6"
+slint = "1.17.1"
+
+[build-dependencies]
+slint-build = "1.17.1"

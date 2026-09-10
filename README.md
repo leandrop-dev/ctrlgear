@@ -40,7 +40,7 @@ sudo udevadm trigger
 cargo build --release
 ```
 
-The binary will be available at `target/release/steelctl`.
+This builds the whole workspace. The CLI binary will be available at `target/release/steelctl-cli`; the GUI binary (see [GUI](#gui) below) at `target/release/steelctl`.
 
 ### Install (binary + udev rule)
 
@@ -48,7 +48,7 @@ The binary will be available at `target/release/steelctl`.
 sudo make install
 ```
 
-Installs the binary to `/usr/local/bin` and the udev rule to `/etc/udev/rules.d/`, then reloads udev — one command instead of the manual steps above. `sudo make uninstall` reverses it. Override `PREFIX` or `UDEV_RULES_DIR` if you need a different layout.
+Installs the CLI binary to `/usr/local/bin` and the udev rule to `/etc/udev/rules.d/`, then reloads udev — one command instead of the manual steps above. `sudo make uninstall` reverses it. Override `PREFIX` or `UDEV_RULES_DIR` if you need a different layout.
 
 ### Arch Linux / CachyOS (PKGBUILD)
 
@@ -56,48 +56,58 @@ Installs the binary to `/usr/local/bin` and the udev rule to `/etc/udev/rules.d/
 makepkg -si
 ```
 
-Builds and installs `steelctl` as a proper pacman package (binary in `/usr/bin`, udev rule in `/usr/lib/udev/rules.d/`, license and docs under `/usr/share`), so `pacman -R steelctl` cleanly removes everything, including the udev rule.
+Builds and installs `steelctl-cli` as a proper pacman package (binary in `/usr/bin`, udev rule in `/usr/lib/udev/rules.d/`, license and docs under `/usr/share`), so `pacman -R steelctl-cli` cleanly removes everything, including the udev rule.
 
 ## Usage
 
 ```bash
 # List all connected SteelSeries devices
-steelctl list-devices
+steelctl-cli list-devices
 
 # Set DPI presets
-steelctl dpi "400,800,1600,3200"
+steelctl-cli dpi "400,800,1600,3200"
 
 # Set polling rate
-steelctl polling-rate 1000
+steelctl-cli polling-rate 1000
 
 # Configure button mapping
-steelctl buttons "button3=scrollup,button6=dpi"
+steelctl-cli buttons "button3=scrollup,button6=dpi"
 
 # Check battery status (wireless devices)
-steelctl battery
+steelctl-cli battery
 
 # Save settings to device memory
-steelctl save
+steelctl-cli save
 
 # Show device information
-steelctl info
+steelctl-cli info
 ```
 
 ### Button Mapping Examples
 
 ```bash
 # Reset to default mapping
-steelctl buttons "default"
+steelctl-cli buttons "default"
 
 # Make side buttons scroll
-steelctl buttons "button4=scrollup,button5=scrolldown"
+steelctl-cli buttons "button4=scrollup,button5=scrolldown"
 
 # Swap left and right buttons
-steelctl buttons "button1=button2,button2=button1"
+steelctl-cli buttons "button1=button2,button2=button1"
 
 # Disable a button
-steelctl buttons "button6=disabled"
+steelctl-cli buttons "button6=disabled"
 ```
+
+## GUI
+
+An early-stage desktop GUI lives in `gui/`, built with [Slint](https://slint.dev). It shares all device/protocol logic with the CLI via the `steelctl-core` library crate — no duplicated HID handling.
+
+```bash
+cargo run --release -p steelctl-gui
+```
+
+Currently a minimal scaffold (device info, battery status, DPI apply) proving the workspace wiring; it is not yet packaged by `Makefile` or `PKGBUILD`.
 
 See [BUTTON_MAPPING.md](BUTTON_MAPPING.md) for detailed button mapping documentation.
 
@@ -105,19 +115,25 @@ See [BUTTON_MAPPING.md](BUTTON_MAPPING.md) for detailed button mapping documenta
 
 ```
 steelctl/
-├── src/
-│   ├── main.rs                    # CLI entry point
-│   ├── lib.rs                     # Library root
-│   ├── error.rs                   # Error types
-│   ├── protocol.rs                # HID protocol constants
-│   ├── hid.rs                     # HID communication wrapper
-│   ├── buttons.rs                 # Button mapping logic
-│   └── device/
-│       ├── mod.rs                 # Device trait definitions
-│       └── rival3_wireless.rs     # Rival 3 Wireless implementation
+├── core/                           # steelctl-core: device/protocol library, no UI deps
+│   └── src/
+│       ├── lib.rs                   # Library root
+│       ├── error.rs                 # Error types
+│       ├── protocol.rs              # HID protocol constants
+│       ├── hid.rs                   # HID communication wrapper
+│       ├── buttons.rs               # Button mapping logic
+│       └── device/
+│           ├── mod.rs                # Device trait definitions
+│           └── rival3_wireless.rs    # Rival 3 Wireless implementation
+├── cli/                             # steelctl-cli: command-line interface (clap)
+│   └── src/main.rs
+├── gui/                             # steelctl: desktop GUI (Slint)
+│   ├── build.rs
+│   ├── ui/main.slint
+│   └── src/main.rs
 ├── udev/
 │   └── 70-steelseries.rules       # Vendor-wide HID access rule (must sort before 73-seat-late.rules)
-├── Cargo.toml
+├── Cargo.toml                     # workspace manifest
 ├── Makefile                       # sudo make install / uninstall
 ├── PKGBUILD                       # Arch Linux / CachyOS package
 ├── README.md
@@ -126,26 +142,20 @@ steelctl/
 
 ## Architecture
 
-The project is organized into several layers:
+The project is a Cargo workspace with three crates:
 
-### 1. Protocol Layer (`protocol.rs`)
-- Defines HID report types and command constants
-- Contains device-specific protocol definitions
-- Maps high-level concepts (polling rate, battery status) to byte values
+### 1. `steelctl-core` (`core/`)
+All device/protocol logic, with no CLI or UI dependencies — shared by both `steelctl-cli` and `steelctl` (GUI).
 
-### 2. HID Communication Layer (`hid.rs`)
-- Wraps the `hidapi` library
-- Handles low-level USB HID communication
-- Implements command delays to prevent device overload
+- **Protocol layer** (`protocol.rs`): HID report types and command constants; maps high-level concepts (polling rate, battery status) to byte values
+- **HID communication layer** (`hid.rs`): wraps the `hidapi` library, handles low-level USB HID communication, implements command delays to prevent device overload
+- **Device layer** (`device/`): trait-based abstraction for different device types, device-specific implementations with protocol commands, sensor-specific mappings (e.g., DPI tables)
 
-### 3. Device Layer (`device/`)
-- Trait-based abstraction for different device types
-- Device-specific implementations with protocol commands
-- Handles sensor-specific mappings (e.g., DPI tables)
+### 2. `steelctl-cli` (`cli/`)
+Command-line interface using `clap`; parses user input and calls into `steelctl-core`.
 
-### 4. CLI Layer (`main.rs`)
-- Command-line interface using `clap`
-- Parses user input and calls device methods
+### 3. `steelctl` GUI (`gui/`)
+Desktop interface using [Slint](https://slint.dev); calls the same `steelctl-core` device traits as the CLI.
 
 ## Supported Devices
 
@@ -160,7 +170,7 @@ The project is organized into several layers:
 
 To check which SteelSeries devices are connected to your system:
 ```bash
-steelctl list-devices
+steelctl-cli list-devices
 ```
 
 ## Development
@@ -185,10 +195,10 @@ WTFPL - Do What The Fuck You Want To Public License
 
 Contributions are welcome! To add support for additional SteelSeries devices:
 
-1. Create a new module in `src/device/`
+1. Create a new module in `core/src/device/`
 2. Implement the appropriate traits (`SteelSeriesDevice`, `ConfigurableDpi`, etc.)
 3. Add the device's protocol commands and DPI mapping table
-4. Update the CLI to support device auto-detection
+4. Update the CLI (and GUI, if applicable) to support device auto-detection
 
 ## Troubleshooting
 
@@ -203,7 +213,7 @@ If you get permission errors when accessing the device:
 
 1. Check if your device is connected:
    ```bash
-   steelctl list-devices
+   steelctl-cli list-devices
    ```
 
 2. For wireless mice, ensure they're in 2.4 GHz mode (not Bluetooth)

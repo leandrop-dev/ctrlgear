@@ -1,0 +1,43 @@
+import { Button, LineEdit, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "SteelCtl";
+    width: 360px;
+    height: 280px;
+
+    in property <string> device-name: "No device connected";
+    in property <string> battery-status: "";
+    in-out property <string> dpi-input: "400,800,1600";
+
+    callback refresh();
+    callback apply-dpi(string);
+
+    VerticalBox {
+        Text {
+            text: root.device-name;
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        Text {
+            text: root.battery-status;
+        }
+
+        HorizontalBox {
+            LineEdit {
+                text <=> root.dpi-input;
+                placeholder-text: "400,800,1600";
+            }
+
+            Button {
+                text: "Apply DPI";
+                clicked => { root.apply-dpi(root.dpi-input); }
+            }
+        }
+
+        Button {
+            text: "Refresh";
+            clicked => { root.refresh(); }
+        }
+    }
+}

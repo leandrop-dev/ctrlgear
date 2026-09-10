@@ -1,6 +1,6 @@
 # Button Mapping
 
-`steelctl buttons "<mapping>"` remaps the physical buttons on a supported mouse. This document covers the mapping string format, available actions, and the on-device protocol encoding, implemented in `src/buttons.rs`.
+`steelctl-cli buttons "<mapping>"` remaps the physical buttons on a supported mouse. This document covers the mapping string format, available actions, and the on-device protocol encoding, implemented in `core/src/buttons.rs`.
 
 ## Format
 
@@ -13,13 +13,13 @@ buttonN=action[,buttonN=action...]
 - The special value `"default"` resets all six buttons to their factory mapping and ignores any other assignments in the string.
 
 ```bash
-steelctl buttons "button3=scrollup,button6=dpi"
-steelctl buttons "default"
+steelctl-cli buttons "button3=scrollup,button6=dpi"
+steelctl-cli buttons "default"
 ```
 
 ## Buttons
 
-Buttons accept several aliases, case-insensitively (`src/buttons.rs:47-56`):
+Buttons accept several aliases, case-insensitively (`core/src/buttons.rs:47-56`):
 
 | Button   | Aliases              |
 |----------|-----------------------|
@@ -34,7 +34,7 @@ On the Rival 3 Wireless, buttons 1–5 are the standard left/right/middle/side b
 
 ## Actions
 
-Actions also accept several aliases (`src/buttons.rs:99-116`):
+Actions also accept several aliases (`core/src/buttons.rs:99-116`):
 
 | Action | Aliases | Effect |
 |--------|---------|--------|
@@ -49,21 +49,21 @@ Actions also accept several aliases (`src/buttons.rs:99-116`):
 
 ```bash
 # Make the side buttons scroll instead of navigating back/forward
-steelctl buttons "button4=scrollup,button5=scrolldown"
+steelctl-cli buttons "button4=scrollup,button5=scrolldown"
 
 # Swap left and right click
-steelctl buttons "button1=button2,button2=button1"
+steelctl-cli buttons "button1=button2,button2=button1"
 
 # Disable the DPI button
-steelctl buttons "button6=disabled"
+steelctl-cli buttons "button6=disabled"
 
 # Reset everything to factory defaults
-steelctl buttons "default"
+steelctl-cli buttons "default"
 ```
 
 ## Default mapping
 
-`ButtonMapping::default_mapping` (`src/buttons.rs:127-138`):
+`ButtonMapping::default_mapping` (`core/src/buttons.rs:127-138`):
 
 | Button   | Default action |
 |----------|----------------|
@@ -76,7 +76,7 @@ steelctl buttons "default"
 
 ## Protocol encoding
 
-Each button's action encodes to a 5-byte field (`src/buttons.rs:78-90`); the full mapping is 6 buttons × 5 bytes = 30 bytes, sent after the `BUTTON_MAPPING` command byte (`0x19`, `src/protocol.rs:33`):
+Each button's action encodes to a 5-byte field (`core/src/buttons.rs:78-90`); the full mapping is 6 buttons × 5 bytes = 30 bytes, sent after the `BUTTON_MAPPING` command byte (`0x19`, `core/src/protocol.rs:33`):
 
 | Action | Encoded bytes |
 |--------|---------------|
@@ -86,6 +86,6 @@ Each button's action encodes to a 5-byte field (`src/buttons.rs:78-90`); the ful
 | Scroll up | `31 00 00 00 00` |
 | Scroll down | `32 00 00 00 00` |
 
-`ButtonAction::Default` is not sent as-is — it's resolved to the factory action for that button slot before encoding (`src/buttons.rs:163-169`), so the device always receives a concrete action.
+`ButtonAction::Default` is not sent as-is — it's resolved to the factory action for that button slot before encoding (`core/src/buttons.rs:163-169`), so the device always receives a concrete action.
 
-Remember to run `steelctl save` after changing button mapping to persist it to device memory — without it, the mapping reverts on unplug/replug.
+Remember to run `steelctl-cli save` after changing button mapping to persist it to device memory — without it, the mapping reverts on unplug/replug.

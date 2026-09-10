@@ -1,12 +1,12 @@
 use clap::{Parser, Subcommand};
-use steelctl::buttons::ButtonMapping;
-use steelctl::device::rival3_wireless::{Rival3Wireless, PRODUCT_ID};
-use steelctl::device::{
+use steelctl_core::buttons::ButtonMapping;
+use steelctl_core::device::rival3_wireless::{Rival3Wireless, PRODUCT_ID};
+use steelctl_core::device::{
     ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice,
     WirelessDevice,
 };
-use steelctl::hid::SteelSeriesHid;
-use steelctl::protocol::STEELSERIES_VENDOR_ID;
+use steelctl_core::hid::SteelSeriesHid;
+use steelctl_core::protocol::STEELSERIES_VENDOR_ID;
 
 #[derive(Parser)]
 #[command(name = "steelctl")]
