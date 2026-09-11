@@ -1,4 +1,4 @@
-import { Button, LineEdit, ScrollView, Palette } from "std-widgets.slint";
+import { Button, LineEdit, ScrollView, SpinBox, Palette } from "std-widgets.slint";
 
 component NavItem inherits Rectangle {
     in property <string> label;
@@ -37,7 +37,10 @@ component NavItem inherits Rectangle {
 }
 
 component Sidebar inherits Rectangle {
+    in property <bool> settings-active: false;
     callback show-about();
+    callback show-devices();
+    callback show-settings();
 
     width: 190px;
     background: Palette.background.darker(0.05);
@@ -63,7 +66,8 @@ component Sidebar inherits Rectangle {
             letter-spacing: 1px;
             color: Palette.foreground.with-alpha(0.4);
         }
-        NavItem { label: "Devices"; icon: "▤"; active: true; }
+        NavItem { label: "Devices"; icon: "▤"; active: !root.settings-active; clicked => { root.show-devices(); } }
+        NavItem { label: "Settings"; icon: "⚙"; active: root.settings-active; clicked => { root.show-settings(); } }
 
         Rectangle { vertical-stretch: 1; }
 
@@ -314,6 +318,69 @@ component DeviceDetailPage inherits Rectangle {
     }
 }
 
+component SettingsPage inherits Rectangle {
+    in-out property <int> poll-interval-minutes;
+    in property <string> status: "";
+    in property <color> status-color: Palette.foreground;
+    callback save-poll-interval(int);
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 16px;
+
+        Text { text: "Settings"; font-size: 22px; font-weight: 800; }
+
+        Rectangle { height: 1px; background: Palette.foreground.with-alpha(0.08); }
+
+        Rectangle {
+            border-radius: 10px;
+            background: Palette.foreground.with-alpha(0.04);
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+                Text { text: "Battery check interval"; font-weight: 700; font-size: 13px; }
+                Text {
+                    text: "How often the system tray re-checks connected devices' battery levels.";
+                    font-size: 11px;
+                    wrap: word-wrap;
+                    color: Palette.foreground.with-alpha(0.6);
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    SpinBox {
+                        minimum: 1;
+                        maximum: 120;
+                        value <=> root.poll-interval-minutes;
+                        horizontal-stretch: 1;
+                    }
+                    Text { text: "minutes"; vertical-alignment: center; color: Palette.foreground.with-alpha(0.6); }
+                    Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.save-poll-interval(root.poll-interval-minutes); } }
+                }
+                if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+export component AppTray inherits SystemTrayIcon {
+    icon: @image-url("../assets/app-icon.svg");
+    tooltip: "CtrlGear";
+    in property <[string]> device-labels: [];
+    callback show-window();
+    callback quit();
+
+    clicked => { root.show-window(); }
+
+    Menu {
+        for label in device-labels: MenuItem { title: label; enabled: false; }
+        if device-labels.length > 0: MenuSeparator {}
+        MenuItem { title: "Show window"; activated => { root.show-window(); } }
+        MenuItem { title: "Quit"; activated => { root.quit(); } }
+    }
+}
+
 export component MainWindow inherits Window {
     title: "CtrlGear";
     icon: @image-url("../assets/app-icon.svg");
@@ -326,6 +393,10 @@ export component MainWindow inherits Window {
     in-out property <[DeviceCardData]> devices: [];
     in property <bool> loading: false;
     in property <bool> showing-detail: false;
+    in-out property <bool> showing-settings: false;
+    in-out property <int> poll-interval-minutes: 5;
+    in property <string> settings-status: "";
+    in property <color> settings-status-color: Palette.foreground;
 
     in property <string> detail-name: "";
     in property <string> detail-product-id-hex: "";
@@ -342,24 +413,35 @@ export component MainWindow inherits Window {
     callback select-device(int);
     callback back-to-grid();
     callback apply-dpi(string);
+    callback save-poll-interval(int);
 
     HorizontalLayout {
         Sidebar {
+            settings-active: root.showing-settings;
             show-about => { about-popup.show(); }
+            show-devices => { root.showing-settings = false; }
+            show-settings => { root.showing-settings = true; }
         }
 
         Rectangle {
             horizontal-stretch: 1;
             background: Palette.background;
 
-            if !showing-detail: DeviceListPage {
+            if root.showing-settings: SettingsPage {
+                poll-interval-minutes <=> root.poll-interval-minutes;
+                status: root.settings-status;
+                status-color: root.settings-status-color;
+                save-poll-interval(minutes) => { root.save-poll-interval(minutes); }
+            }
+
+            if !root.showing-settings && !showing-detail: DeviceListPage {
                 devices: root.devices;
                 loading: root.loading;
                 refresh => { root.refresh(); }
                 select-device(i) => { root.select-device(i); }
             }
 
-            if showing-detail: DeviceDetailPage {
+            if !root.showing-settings && showing-detail: DeviceDetailPage {
                 name: root.detail-name;
                 product-id-hex: root.detail-product-id-hex;
                 supported: root.detail-supported;
