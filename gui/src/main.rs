@@ -33,20 +33,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // re-running discovery (and without threading that data through Slint).
     let summaries: Rc<RefCell<Vec<DeviceSummary>>> = Rc::new(RefCell::new(Vec::new()));
     let selected_product_id: Rc<RefCell<Option<u16>>> = Rc::new(RefCell::new(None));
-    let low_battery_notified: Rc<RefCell<std::collections::HashSet<u16>>> =
-        Rc::new(RefCell::new(std::collections::HashSet::new()));
+    let battery_state: Rc<RefCell<std::collections::HashMap<u16, BatteryState>>> =
+        Rc::new(RefCell::new(std::collections::HashMap::new()));
 
-    let settings = config::load();
-    window.set_poll_interval_minutes(settings.poll_interval_minutes as i32);
+    let settings_cell: Rc<RefCell<config::Settings>> = Rc::new(RefCell::new(config::load()));
+    {
+        let settings = settings_cell.borrow();
+        window.set_poll_interval_minutes(settings.poll_interval_minutes as i32);
+        window.set_tray_icon_monochrome(matches!(settings.tray_icon_style, config::TrayIconStyle::Monochrome));
+        tray.set_monochrome(matches!(settings.tray_icon_style, config::TrayIconStyle::Monochrome));
+        window.set_notification_persistent(settings.notification_persistent);
+        window.set_notification_sound_index(sound_choice_index(settings.notification_sound));
+    }
 
     let poll_timer = Rc::new(slint::Timer::default());
 
     {
         let window = window.as_weak();
         let poll_timer = poll_timer.clone();
+        let settings_cell = settings_cell.clone();
         window.unwrap().on_save_poll_interval(move |minutes| {
             let window = window.unwrap();
-            let settings = config::Settings { poll_interval_minutes: minutes.max(1) as u32 };
+            let settings = {
+                let mut settings = *settings_cell.borrow();
+                settings.poll_interval_minutes = minutes.max(1) as u32;
+                *settings_cell.borrow_mut() = settings;
+                settings
+            };
             window.set_poll_interval_minutes(settings.poll_interval_minutes as i32);
             poll_timer.set_interval(Duration::from_secs(settings.poll_interval_minutes as u64 * 60));
             match config::save(&settings) {
@@ -72,15 +85,118 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let window = window.as_weak();
         let tray = tray.as_weak();
+        let settings_cell = settings_cell.clone();
+        window.unwrap().on_save_tray_icon_style(move |monochrome| {
+            let window = window.unwrap();
+            let tray = tray.unwrap();
+            let style =
+                if monochrome { config::TrayIconStyle::Monochrome } else { config::TrayIconStyle::Colored };
+            let settings = {
+                let mut settings = *settings_cell.borrow();
+                settings.tray_icon_style = style;
+                *settings_cell.borrow_mut() = settings;
+                settings
+            };
+            window.set_tray_icon_monochrome(monochrome);
+            tray.set_monochrome(monochrome);
+            match config::save(&settings) {
+                Ok(()) => {
+                    window.set_settings_status("Saved.".into());
+                    window.set_settings_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_settings_status(format!("Failed to save: {e}").into());
+                    window.set_settings_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+
+            let window = window.as_weak();
+            slint::Timer::single_shot(Duration::from_secs(5), move || {
+                if let Some(window) = window.upgrade() {
+                    window.set_settings_status("".into());
+                }
+            });
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let settings_cell = settings_cell.clone();
+        window.unwrap().on_save_notification_persistent(move |persistent| {
+            let window = window.unwrap();
+            let settings = {
+                let mut settings = *settings_cell.borrow();
+                settings.notification_persistent = persistent;
+                *settings_cell.borrow_mut() = settings;
+                settings
+            };
+            window.set_notification_persistent(persistent);
+            match config::save(&settings) {
+                Ok(()) => {
+                    window.set_settings_status("Saved.".into());
+                    window.set_settings_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_settings_status(format!("Failed to save: {e}").into());
+                    window.set_settings_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+
+            let window = window.as_weak();
+            slint::Timer::single_shot(Duration::from_secs(5), move || {
+                if let Some(window) = window.upgrade() {
+                    window.set_settings_status("".into());
+                }
+            });
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let settings_cell = settings_cell.clone();
+        window.unwrap().on_save_notification_sound(move |index| {
+            let window = window.unwrap();
+            let sound = sound_choice_from_index(index);
+            let settings = {
+                let mut settings = *settings_cell.borrow();
+                settings.notification_sound = sound;
+                *settings_cell.borrow_mut() = settings;
+                settings
+            };
+            window.set_notification_sound_index(sound_choice_index(sound));
+            match config::save(&settings) {
+                Ok(()) => {
+                    window.set_settings_status("Saved.".into());
+                    window.set_settings_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_settings_status(format!("Failed to save: {e}").into());
+                    window.set_settings_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+
+            let window = window.as_weak();
+            slint::Timer::single_shot(Duration::from_secs(5), move || {
+                if let Some(window) = window.upgrade() {
+                    window.set_settings_status("".into());
+                }
+            });
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let tray = tray.as_weak();
         let summaries = summaries.clone();
-        let low_battery_notified = low_battery_notified.clone();
+        let battery_state = battery_state.clone();
+        let settings_cell = settings_cell.clone();
         window.unwrap().on_refresh(move || {
             let window = window.unwrap();
             window.set_loading(true);
             let discovered = discover();
             window.set_devices(to_card_model(&discovered));
             tray.unwrap().set_device_labels(device_labels(&discovered));
-            check_low_battery(&discovered, &mut low_battery_notified.borrow_mut());
+            check_low_battery(&discovered, &mut battery_state.borrow_mut(), &settings_cell.borrow());
             *summaries.borrow_mut() = discovered;
             window.set_loading(false);
         });
@@ -102,12 +218,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window.set_detail_product_id_hex(format!("0x{:04x}", summary.product_id).into());
             window.set_detail_supported(summary.supported);
             window.set_detail_supports_dpi(summary.supports_dpi);
+            window.set_detail_supports_polling_rate(summary.supports_polling_rate);
+            window.set_detail_supports_button_mapping(summary.supports_button_mapping);
             window.set_detail_has_battery(summary.battery.is_some());
             window.set_detail_battery_percent(summary.battery.map(|b| b.level).unwrap_or(0) as i32);
             window.set_detail_charging(summary.battery.map(|b| b.is_charging).unwrap_or(false));
             window.set_detail_status(summary.note.clone().unwrap_or_default().into());
             window.set_detail_status_color(STATUS_COLOR_ERROR);
             window.set_dpi_input("400,800,1600".into());
+            window.set_polling_rate_index(3);
+            window.set_button_mapping_index_0(4);
+            window.set_button_mapping_index_1(4);
+            window.set_button_mapping_index_2(4);
+            window.set_button_mapping_index_3(4);
+            window.set_button_mapping_index_4(4);
+            window.set_button_mapping_index_5(4);
             window.set_showing_detail(true);
         });
     }
@@ -143,6 +268,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     {
         let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_polling_rate(move |index| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_polling_rate(product_id, index) {
+                Ok(()) => {
+                    window.set_detail_status("Polling rate applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_button_mapping(move |indices| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_button_mapping(product_id, &indices) {
+                Ok(()) => {
+                    window.set_detail_status("Button mapping applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
         window.unwrap().window().on_close_requested(move || {
             window.unwrap().hide().unwrap();
             slint::CloseRequestResponse::HideWindow
@@ -163,7 +332,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let window = window.as_weak();
         let tray = tray.as_weak();
         let summaries = summaries.clone();
-        let low_battery_notified = low_battery_notified.clone();
+        let battery_state = battery_state.clone();
+        let settings_cell = settings_cell.clone();
         let interval_secs = window.unwrap().get_poll_interval_minutes() as u64 * 60;
         poll_timer.start(slint::TimerMode::Repeated, Duration::from_secs(interval_secs), move || {
             let window = window.unwrap();
@@ -171,7 +341,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let discovered = discover();
             window.set_devices(to_card_model(&discovered));
             tray.set_device_labels(device_labels(&discovered));
-            check_low_battery(&discovered, &mut low_battery_notified.borrow_mut());
+            check_low_battery(&discovered, &mut battery_state.borrow_mut(), &settings_cell.borrow());
             *summaries.borrow_mut() = discovered;
         });
     }
@@ -210,22 +380,88 @@ fn device_labels(devices: &[DeviceSummary]) -> slint::ModelRc<slint::SharedStrin
 
 const LOW_BATTERY_THRESHOLD: u8 = 25;
 
+/// Maps a `config::SoundChoice` to its `ComboBox` index in the Settings page
+/// (`gui/ui/main.slint`'s `notification-sound` `ComboBox` model order: Default
+/// sound, Silent, Dialog warning, Message).
+fn sound_choice_index(sound: config::SoundChoice) -> i32 {
+    match sound {
+        config::SoundChoice::Default => 0,
+        config::SoundChoice::Silent => 1,
+        config::SoundChoice::DialogWarning => 2,
+        config::SoundChoice::MessageNewInstant => 3,
+    }
+}
+
+fn sound_choice_from_index(index: i32) -> config::SoundChoice {
+    match index {
+        1 => config::SoundChoice::Silent,
+        2 => config::SoundChoice::DialogWarning,
+        3 => config::SoundChoice::MessageNewInstant,
+        _ => config::SoundChoice::Default,
+    }
+}
+
+struct BatteryState {
+    notified: bool,
+    last_level: u8,
+}
+
+const BATTERY_SWAP_JUMP_THRESHOLD: u8 = 15;
+
 /// Fires a low-battery notification the first time a device's level drops
 /// below [`LOW_BATTERY_THRESHOLD`], and allows it to fire again only after
 /// the device recovers back above the threshold and drops below it again.
-fn check_low_battery(devices: &[DeviceSummary], notified: &mut std::collections::HashSet<u16>) {
+/// Timeout and sound follow `settings.notification_persistent`/`notification_sound`.
+///
+/// A level jump of at least [`BATTERY_SWAP_JUMP_THRESHOLD`] percentage points
+/// since the last poll, while a low-battery episode is active, is treated as
+/// a battery swap: it clears the episode without notifying on the jump
+/// itself, so a later re-drop below the threshold notifies again.
+fn check_low_battery(
+    devices: &[DeviceSummary],
+    states: &mut std::collections::HashMap<u16, BatteryState>,
+    settings: &config::Settings,
+) {
     for d in devices {
         let Some(battery) = d.battery else { continue };
-        let already_notified = notified.contains(&d.product_id);
-        if battery.level < LOW_BATTERY_THRESHOLD && !already_notified {
-            notified.insert(d.product_id);
-            let _ = notify_rust::Notification::new()
+        let state = states
+            .entry(d.product_id)
+            .or_insert(BatteryState { notified: false, last_level: battery.level });
+        let jumped_significantly = battery.level >= state.last_level.saturating_add(BATTERY_SWAP_JUMP_THRESHOLD);
+        state.last_level = battery.level;
+
+        if jumped_significantly && state.notified {
+            state.notified = false;
+            continue;
+        }
+
+        if battery.level < LOW_BATTERY_THRESHOLD && !state.notified {
+            state.notified = true;
+            let mut notification = notify_rust::Notification::new();
+            notification
                 .summary("Low battery")
                 .body(&format!("{} is at {}%", display_name(&d.name), battery.level))
                 .urgency(notify_rust::Urgency::Critical)
-                .show();
-        } else if battery.level >= LOW_BATTERY_THRESHOLD && already_notified {
-            notified.remove(&d.product_id);
+                .timeout(if settings.notification_persistent {
+                    notify_rust::Timeout::Never
+                } else {
+                    notify_rust::Timeout::Default
+                });
+            match settings.notification_sound {
+                config::SoundChoice::Silent => {
+                    notification.hint(notify_rust::Hint::SuppressSound(true));
+                }
+                config::SoundChoice::Default => {}
+                config::SoundChoice::DialogWarning => {
+                    notification.sound_name("dialog-warning");
+                }
+                config::SoundChoice::MessageNewInstant => {
+                    notification.sound_name("message-new-instant");
+                }
+            }
+            let _ = notification.show();
+        } else if battery.level >= LOW_BATTERY_THRESHOLD && state.notified {
+            state.notified = false;
         }
     }
 }
@@ -241,6 +477,8 @@ mod tests {
             name: name.to_string(),
             supported: true,
             supports_dpi: false,
+            supports_polling_rate: false,
+            supports_button_mapping: false,
             battery,
             note: None,
         }
@@ -284,6 +522,8 @@ mod tests {
             name: "Test Device".to_string(),
             supported: true,
             supports_dpi: false,
+            supports_polling_rate: false,
+            supports_button_mapping: false,
             battery,
             note: None,
         }
@@ -292,44 +532,61 @@ mod tests {
     #[test]
     fn check_low_battery_inserts_on_first_drop_below_threshold() {
         let devices = vec![device_with_id(1, Some(BatteryStatus { level: 20, is_charging: false }))];
-        let mut notified = std::collections::HashSet::new();
+        let mut states = std::collections::HashMap::new();
 
-        check_low_battery(&devices, &mut notified);
+        check_low_battery(&devices, &mut states, &config::Settings::default());
 
-        assert!(notified.contains(&1));
+        assert!(states.get(&1).unwrap().notified);
     }
 
     #[test]
     fn check_low_battery_does_not_double_insert_while_still_low() {
         let devices = vec![device_with_id(1, Some(BatteryStatus { level: 20, is_charging: false }))];
-        let mut notified = std::collections::HashSet::new();
+        let mut states = std::collections::HashMap::new();
 
-        check_low_battery(&devices, &mut notified);
-        check_low_battery(&devices, &mut notified);
+        check_low_battery(&devices, &mut states, &config::Settings::default());
+        check_low_battery(&devices, &mut states, &config::Settings::default());
 
-        assert_eq!(notified.len(), 1);
-        assert!(notified.contains(&1));
+        assert_eq!(states.len(), 1);
+        assert!(states.get(&1).unwrap().notified);
     }
 
     #[test]
     fn check_low_battery_clears_on_recovery_above_threshold() {
-        let mut notified = std::collections::HashSet::new();
-        notified.insert(1u16);
+        let mut states = std::collections::HashMap::new();
+        states.insert(1u16, BatteryState { notified: true, last_level: 20 });
         let devices = vec![device_with_id(1, Some(BatteryStatus { level: 30, is_charging: false }))];
 
-        check_low_battery(&devices, &mut notified);
+        check_low_battery(&devices, &mut states, &config::Settings::default());
 
-        assert!(!notified.contains(&1));
+        assert!(!states.get(&1).unwrap().notified);
     }
 
     #[test]
     fn check_low_battery_skips_devices_without_battery() {
         let devices = vec![device_with_id(1, None)];
-        let mut notified = std::collections::HashSet::new();
+        let mut states = std::collections::HashMap::new();
 
-        check_low_battery(&devices, &mut notified);
+        check_low_battery(&devices, &mut states, &config::Settings::default());
 
-        assert!(notified.is_empty());
+        assert!(states.is_empty());
+    }
+
+    #[test]
+    fn check_low_battery_swap_resets_episode_without_notifying() {
+        let mut states = std::collections::HashMap::new();
+        states.insert(1u16, BatteryState { notified: true, last_level: 10 });
+        let jumped = vec![device_with_id(1, Some(BatteryStatus { level: 60, is_charging: false }))];
+
+        check_low_battery(&jumped, &mut states, &config::Settings::default());
+
+        assert!(!states.get(&1).unwrap().notified);
+
+        let dropped_again = vec![device_with_id(1, Some(BatteryStatus { level: 20, is_charging: false }))];
+
+        check_low_battery(&dropped_again, &mut states, &config::Settings::default());
+
+        assert!(states.get(&1).unwrap().notified);
     }
 }
 
@@ -407,4 +664,42 @@ fn apply_dpi(product_id: u16, values: &str) -> ctrlgear_core::Result<()> {
     let api = hidapi::HidApi::new()?;
     let device = registry::open(&api, product_id)?;
     device.set_dpi(&dpi_values)
+}
+
+fn apply_polling_rate(product_id: u16, index: i32) -> ctrlgear_core::Result<()> {
+    let hz = match index {
+        0 => 125,
+        1 => 250,
+        2 => 500,
+        _ => 1000,
+    };
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_polling_rate(hz)
+}
+
+/// Keyword order matches the `ComboBox` `model` in `gui/ui/main.slint`'s
+/// button-mapping section, and is understood by `ButtonAction::from_str`
+/// (`core/src/buttons.rs`), reused here instead of a second parser.
+const BUTTON_ACTION_KEYWORDS: [&str; 11] = [
+    "disabled", "dpiswitch", "scrollup", "scrolldown", "default", "button1", "button2", "button3",
+    "button4", "button5", "button6",
+];
+
+fn apply_button_mapping(product_id: u16, indices: &slint::ModelRc<i32>) -> ctrlgear_core::Result<()> {
+    use ctrlgear_core::buttons::{Button, ButtonAction, ButtonMapping};
+    use slint::Model;
+    use std::str::FromStr;
+
+    let mut mapping = ButtonMapping::default_mapping();
+    for (i, button) in Button::all().into_iter().enumerate() {
+        let index = indices.row_data(i).unwrap_or(4) as usize;
+        let keyword = BUTTON_ACTION_KEYWORDS.get(index).copied().unwrap_or("default");
+        let action = ButtonAction::from_str(keyword)?;
+        mapping.set(button, action);
+    }
+
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_button_mapping(&mapping)
 }

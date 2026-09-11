@@ -6,7 +6,7 @@
 
 use crate::device::arctis_nova_7::{ArctisNova7, PRODUCT_ID as ARCTIS_NOVA_7_PRODUCT_ID};
 use crate::device::rival3_wireless::{Rival3Wireless, PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID};
-use crate::device::{ConfigurableDpi, SteelSeriesDevice, WirelessDevice};
+use crate::device::{ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice, WirelessDevice};
 use crate::hid::SteelSeriesHid;
 use crate::protocol::{BatteryStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
@@ -50,11 +50,39 @@ impl Device {
         matches!(self, Device::Rival3Wireless(_))
     }
 
+    /// Whether this device has a configurable polling rate (mice only).
+    pub fn supports_polling_rate(&self) -> bool {
+        matches!(self, Device::Rival3Wireless(_))
+    }
+
+    /// Whether this device has configurable button mapping (mice only).
+    pub fn supports_button_mapping(&self) -> bool {
+        matches!(self, Device::Rival3Wireless(_))
+    }
+
     pub fn set_dpi(&self, values: &[u16]) -> Result<()> {
         match self {
             Device::Rival3Wireless(d) => d.set_dpi(values),
             Device::ArctisNova7(_) => Err(Error::Unsupported(
                 "Arctis Nova 7 has no configurable DPI".to_string(),
+            )),
+        }
+    }
+
+    pub fn set_polling_rate(&self, hz: u16) -> Result<()> {
+        match self {
+            Device::Rival3Wireless(d) => d.set_polling_rate(hz),
+            Device::ArctisNova7(_) => Err(Error::Unsupported(
+                "Arctis Nova 7 has no configurable polling rate".to_string(),
+            )),
+        }
+    }
+
+    pub fn set_button_mapping(&self, mapping: &crate::buttons::ButtonMapping) -> Result<()> {
+        match self {
+            Device::Rival3Wireless(d) => d.set_button_mapping(mapping),
+            Device::ArctisNova7(_) => Err(Error::Unsupported(
+                "Arctis Nova 7 has no configurable button mapping".to_string(),
             )),
         }
     }
@@ -93,6 +121,8 @@ pub struct DeviceSummary {
     pub name: String,
     pub supported: bool,
     pub supports_dpi: bool,
+    pub supports_polling_rate: bool,
+    pub supports_button_mapping: bool,
     pub battery: Option<BatteryStatus>,
     /// Set when the device is supported but a query (e.g. battery) failed,
     /// or left as the raw HID product string for unsupported devices.
@@ -120,6 +150,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                         .to_string(),
                     supported: false,
                     supports_dpi: false,
+                    supports_polling_rate: false,
+                    supports_button_mapping: false,
                     battery: None,
                     note: None,
                 };
@@ -129,12 +161,16 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                 Ok(device) => {
                     let name = device.name().to_string();
                     let supports_dpi = device.supports_dpi();
+                    let supports_polling_rate = device.supports_polling_rate();
+                    let supports_button_mapping = device.supports_button_mapping();
                     match device.battery_status() {
                         Ok(status) => DeviceSummary {
                             product_id,
                             name,
                             supported: true,
                             supports_dpi,
+                            supports_polling_rate,
+                            supports_button_mapping,
                             battery: Some(status),
                             note: None,
                         },
@@ -143,6 +179,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             name,
                             supported: true,
                             supports_dpi,
+                            supports_polling_rate,
+                            supports_button_mapping,
                             battery: None,
                             note: Some(e.to_string()),
                         },
@@ -156,6 +194,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                         .to_string(),
                     supported: true,
                     supports_dpi: false,
+                    supports_polling_rate: false,
+                    supports_button_mapping: false,
                     battery: None,
                     note: Some(e.to_string()),
                 },

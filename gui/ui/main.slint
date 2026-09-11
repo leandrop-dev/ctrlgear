@@ -1,4 +1,4 @@
-import { Button, LineEdit, ScrollView, SpinBox, Palette } from "std-widgets.slint";
+import { Button, ComboBox, LineEdit, ScrollView, SpinBox, Palette } from "std-widgets.slint";
 
 component NavItem inherits Rectangle {
     in property <string> label;
@@ -248,14 +248,25 @@ component DeviceDetailPage inherits Rectangle {
     in property <string> product-id-hex;
     in property <bool> supported;
     in property <bool> supports-dpi;
+    in property <bool> supports-polling-rate;
+    in property <bool> supports-button-mapping;
     in property <bool> has-battery;
     in property <int> battery-percent;
     in property <bool> charging;
     in property <string> status;
     in property <color> status-color: Palette.foreground;
     in-out property <string> dpi-input;
+    in-out property <int> polling-rate-index: 3;
+    in-out property <int> button-mapping-index-0: 4;
+    in-out property <int> button-mapping-index-1: 4;
+    in-out property <int> button-mapping-index-2: 4;
+    in-out property <int> button-mapping-index-3: 4;
+    in-out property <int> button-mapping-index-4: 4;
+    in-out property <int> button-mapping-index-5: 4;
     callback back();
     callback apply-dpi(string);
+    callback apply-polling-rate(int);
+    callback apply-button-mapping([int]);
 
     VerticalLayout {
         padding: 18px;
@@ -303,7 +314,104 @@ component DeviceDetailPage inherits Rectangle {
             }
         }
 
-        if supported && !supports-dpi: Rectangle {
+        if supported && supports-polling-rate: Rectangle {
+            border-radius: 10px;
+            background: Palette.foreground.with-alpha(0.04);
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+                Text { text: "Polling rate"; font-weight: 700; font-size: 13px; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    ComboBox {
+                        model: ["125 Hz", "250 Hz", "500 Hz", "1000 Hz"];
+                        current-index <=> root.polling-rate-index;
+                        horizontal-stretch: 1;
+                    }
+                    Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-polling-rate(root.polling-rate-index); } }
+                }
+            }
+        }
+
+        if supported && supports-button-mapping: Rectangle {
+            border-radius: 10px;
+            background: Palette.foreground.with-alpha(0.04);
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+                Text { text: "Button mapping"; font-weight: 700; font-size: 13px; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Button 1"; vertical-alignment: center; width: 70px; }
+                    ComboBox {
+                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                        current-index <=> root.button-mapping-index-0;
+                        horizontal-stretch: 1;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Button 2"; vertical-alignment: center; width: 70px; }
+                    ComboBox {
+                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                        current-index <=> root.button-mapping-index-1;
+                        horizontal-stretch: 1;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Button 3"; vertical-alignment: center; width: 70px; }
+                    ComboBox {
+                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                        current-index <=> root.button-mapping-index-2;
+                        horizontal-stretch: 1;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Button 4"; vertical-alignment: center; width: 70px; }
+                    ComboBox {
+                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                        current-index <=> root.button-mapping-index-3;
+                        horizontal-stretch: 1;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Button 5"; vertical-alignment: center; width: 70px; }
+                    ComboBox {
+                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                        current-index <=> root.button-mapping-index-4;
+                        horizontal-stretch: 1;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: "Button 6"; vertical-alignment: center; width: 70px; }
+                    ComboBox {
+                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                        current-index <=> root.button-mapping-index-5;
+                        horizontal-stretch: 1;
+                    }
+                }
+                Button {
+                    text: "Apply";
+                    clicked => {
+                        root.apply-button-mapping([
+                            root.button-mapping-index-0,
+                            root.button-mapping-index-1,
+                            root.button-mapping-index-2,
+                            root.button-mapping-index-3,
+                            root.button-mapping-index-4,
+                            root.button-mapping-index-5,
+                        ]);
+                    }
+                }
+                if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
+            }
+        }
+
+        if supported && !supports-dpi && !supports-polling-rate && !supports-button-mapping: Rectangle {
             border-radius: 10px;
             background: Palette.foreground.with-alpha(0.04);
             VerticalLayout {
@@ -320,9 +428,15 @@ component DeviceDetailPage inherits Rectangle {
 
 component SettingsPage inherits Rectangle {
     in-out property <int> poll-interval-minutes;
+    in-out property <bool> tray-icon-monochrome;
+    in-out property <bool> notification-persistent;
+    in-out property <int> notification-sound-index;
     in property <string> status: "";
     in property <color> status-color: Palette.foreground;
     callback save-poll-interval(int);
+    callback set-tray-icon-monochrome(bool);
+    callback set-notification-persistent(bool);
+    callback set-notification-sound(int);
 
     VerticalLayout {
         padding: 24px;
@@ -360,12 +474,54 @@ component SettingsPage inherits Rectangle {
             }
         }
 
+        Rectangle {
+            border-radius: 10px;
+            background: Palette.foreground.with-alpha(0.04);
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+                Text { text: "Tray icon"; font-weight: 700; font-size: 13px; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button { text: "Colored"; clicked => { root.set-tray-icon-monochrome(false); } }
+                    Button { text: "Monochrome"; clicked => { root.set-tray-icon-monochrome(true); } }
+                }
+            }
+        }
+
+        Rectangle {
+            border-radius: 10px;
+            background: Palette.foreground.with-alpha(0.04);
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+                Text { text: "Low-battery notification"; font-weight: 700; font-size: 13px; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button {
+                        text: root.notification-persistent ? "Stays until dismissed" : "Auto-dismisses";
+                        clicked => { root.set-notification-persistent(!root.notification-persistent); }
+                    }
+                }
+                ComboBox {
+                    model: ["Default sound", "Silent", "Dialog warning", "Message"];
+                    current-index <=> root.notification-sound-index;
+                    selected(value) => { root.set-notification-sound(root.notification-sound-index); }
+                }
+            }
+        }
+
         Rectangle { vertical-stretch: 1; }
     }
 }
 
 export component AppTray inherits SystemTrayIcon {
-    icon: @image-url("../assets/app-icon.svg");
+    in property <bool> monochrome: false;
+    icon: root.monochrome
+        ? (Palette.color-scheme == ColorScheme.dark
+            ? @image-url("../assets/app-icon-mono-light.svg")
+            : @image-url("../assets/app-icon-mono-dark.svg"))
+        : @image-url("../assets/app-icon.svg");
     tooltip: "CtrlGear";
     in property <[string]> device-labels: [];
     callback show-window();
@@ -395,6 +551,9 @@ export component MainWindow inherits Window {
     in property <bool> showing-detail: false;
     in-out property <bool> showing-settings: false;
     in-out property <int> poll-interval-minutes: 5;
+    in-out property <bool> tray-icon-monochrome: false;
+    in-out property <bool> notification-persistent: false;
+    in-out property <int> notification-sound-index: 0;
     in property <string> settings-status: "";
     in property <color> settings-status-color: Palette.foreground;
 
@@ -402,18 +561,32 @@ export component MainWindow inherits Window {
     in property <string> detail-product-id-hex: "";
     in property <bool> detail-supported: false;
     in property <bool> detail-supports-dpi: false;
+    in property <bool> detail-supports-polling-rate: false;
+    in property <bool> detail-supports-button-mapping: false;
     in property <bool> detail-has-battery: false;
     in property <int> detail-battery-percent: 0;
     in property <bool> detail-charging: false;
     in property <string> detail-status: "";
     in property <color> detail-status-color: Palette.foreground;
     in-out property <string> dpi-input: "400,800,1600";
+    in-out property <int> polling-rate-index: 3;
+    in-out property <int> button-mapping-index-0: 4;
+    in-out property <int> button-mapping-index-1: 4;
+    in-out property <int> button-mapping-index-2: 4;
+    in-out property <int> button-mapping-index-3: 4;
+    in-out property <int> button-mapping-index-4: 4;
+    in-out property <int> button-mapping-index-5: 4;
 
     callback refresh();
     callback select-device(int);
     callback back-to-grid();
     callback apply-dpi(string);
+    callback apply-polling-rate(int);
+    callback apply-button-mapping([int]);
     callback save-poll-interval(int);
+    callback save-tray-icon-style(bool);
+    callback save-notification-persistent(bool);
+    callback save-notification-sound(int);
 
     HorizontalLayout {
         Sidebar {
@@ -429,9 +602,15 @@ export component MainWindow inherits Window {
 
             if root.showing-settings: SettingsPage {
                 poll-interval-minutes <=> root.poll-interval-minutes;
+                tray-icon-monochrome <=> root.tray-icon-monochrome;
+                notification-persistent <=> root.notification-persistent;
+                notification-sound-index <=> root.notification-sound-index;
                 status: root.settings-status;
                 status-color: root.settings-status-color;
                 save-poll-interval(minutes) => { root.save-poll-interval(minutes); }
+                set-tray-icon-monochrome(mono) => { root.save-tray-icon-style(mono); }
+                set-notification-persistent(persistent) => { root.save-notification-persistent(persistent); }
+                set-notification-sound(index) => { root.save-notification-sound(index); }
             }
 
             if !root.showing-settings && !showing-detail: DeviceListPage {
@@ -446,14 +625,25 @@ export component MainWindow inherits Window {
                 product-id-hex: root.detail-product-id-hex;
                 supported: root.detail-supported;
                 supports-dpi: root.detail-supports-dpi;
+                supports-polling-rate: root.detail-supports-polling-rate;
+                supports-button-mapping: root.detail-supports-button-mapping;
                 has-battery: root.detail-has-battery;
                 battery-percent: root.detail-battery-percent;
                 charging: root.detail-charging;
                 status: root.detail-status;
                 status-color: root.detail-status-color;
                 dpi-input <=> root.dpi-input;
+                polling-rate-index <=> root.polling-rate-index;
+                button-mapping-index-0 <=> root.button-mapping-index-0;
+                button-mapping-index-1 <=> root.button-mapping-index-1;
+                button-mapping-index-2 <=> root.button-mapping-index-2;
+                button-mapping-index-3 <=> root.button-mapping-index-3;
+                button-mapping-index-4 <=> root.button-mapping-index-4;
+                button-mapping-index-5 <=> root.button-mapping-index-5;
                 back => { root.back-to-grid(); }
                 apply-dpi(values) => { root.apply-dpi(values); }
+                apply-polling-rate(index) => { root.apply-polling-rate(index); }
+                apply-button-mapping(indices) => { root.apply-button-mapping(indices); }
             }
         }
     }
