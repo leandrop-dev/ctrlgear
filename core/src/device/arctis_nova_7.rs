@@ -20,8 +20,20 @@ use crate::hid::SteelSeriesHid;
 use crate::protocol::{BatteryStatus, ReportType, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
 
-/// Product ID for Arctis Nova 7 Wireless (percentage-battery firmware)
+/// Product ID for Arctis Nova 7 Wireless (percentage-battery firmware),
+/// reported when connected via the 2.4GHz USB dongle.
 pub const PRODUCT_ID: u16 = 0x22a1;
+
+/// Product ID reported when the same headset is connected directly via a
+/// USB cable (e.g. for charging) instead of the wireless dongle. Confirmed
+/// on this machine's hardware (`lsusb`/`ctrlgear-cli list-devices`): a
+/// second `1038:22a0` interface appears alongside `1038:22a1` while the
+/// headset is plugged in both ways at once, also exposing a `0xffc0`
+/// configuration interface — same protocol shape, different product ID.
+/// Used today only to label connection type
+/// (`registry::ConnectionType::UsbWired`); not yet wired into `is_supported`/
+/// `open`, so it isn't treated as a configurable device in its own right.
+pub const WIRED_PRODUCT_ID: u16 = 0x22a0;
 
 /// Status request command byte; the device replies with a status report
 /// whose byte 2 is battery percent (0-100) and byte 3 is charge/connection

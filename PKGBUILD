@@ -1,4 +1,4 @@
-# Maintainer: Leandro Paixão <inoobik@gmail.com>
+# Maintainer: Leandro Paixão <leo@codemonk.eu>
 pkgname=ctrlgear
 pkgver=0.1.0
 pkgrel=1

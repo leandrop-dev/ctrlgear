@@ -15,6 +15,28 @@ slint::include_modules!();
 const STATUS_COLOR_OK: slint::Color = slint::Color::from_rgb_u8(0x4c, 0xaf, 0x50);
 const STATUS_COLOR_ERROR: slint::Color = slint::Color::from_rgb_u8(0xe0, 0x50, 0x50);
 
+/// Shows the result of a `config::save` call as the Settings-page toast,
+/// auto-clearing it after 5 seconds.
+fn show_save_status(window: &MainWindow, result: std::io::Result<()>) {
+    match result {
+        Ok(()) => {
+            window.set_settings_status("Saved.".into());
+            window.set_settings_status_color(STATUS_COLOR_OK);
+        }
+        Err(e) => {
+            window.set_settings_status(format!("Failed to save: {e}").into());
+            window.set_settings_status_color(STATUS_COLOR_ERROR);
+        }
+    }
+
+    let window = window.as_weak();
+    slint::Timer::single_shot(Duration::from_secs(5), move || {
+        if let Some(window) = window.upgrade() {
+            window.set_settings_status("".into());
+        }
+    });
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window = MainWindow::new()?;
     let tray = AppTray::new()?;
@@ -62,23 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             window.set_poll_interval_minutes(settings.poll_interval_minutes as i32);
             poll_timer.set_interval(Duration::from_secs(settings.poll_interval_minutes as u64 * 60));
-            match config::save(&settings) {
-                Ok(()) => {
-                    window.set_settings_status("Saved.".into());
-                    window.set_settings_status_color(STATUS_COLOR_OK);
-                }
-                Err(e) => {
-                    window.set_settings_status(format!("Failed to save: {e}").into());
-                    window.set_settings_status_color(STATUS_COLOR_ERROR);
-                }
-            }
-
-            let window = window.as_weak();
-            slint::Timer::single_shot(Duration::from_secs(5), move || {
-                if let Some(window) = window.upgrade() {
-                    window.set_settings_status("".into());
-                }
-            });
+            show_save_status(&window, config::save(&settings));
         });
     }
 
@@ -99,23 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
             window.set_tray_icon_monochrome(monochrome);
             tray.set_monochrome(monochrome);
-            match config::save(&settings) {
-                Ok(()) => {
-                    window.set_settings_status("Saved.".into());
-                    window.set_settings_status_color(STATUS_COLOR_OK);
-                }
-                Err(e) => {
-                    window.set_settings_status(format!("Failed to save: {e}").into());
-                    window.set_settings_status_color(STATUS_COLOR_ERROR);
-                }
-            }
-
-            let window = window.as_weak();
-            slint::Timer::single_shot(Duration::from_secs(5), move || {
-                if let Some(window) = window.upgrade() {
-                    window.set_settings_status("".into());
-                }
-            });
+            show_save_status(&window, config::save(&settings));
         });
     }
 
@@ -131,23 +121,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 settings
             };
             window.set_notification_persistent(persistent);
-            match config::save(&settings) {
-                Ok(()) => {
-                    window.set_settings_status("Saved.".into());
-                    window.set_settings_status_color(STATUS_COLOR_OK);
-                }
-                Err(e) => {
-                    window.set_settings_status(format!("Failed to save: {e}").into());
-                    window.set_settings_status_color(STATUS_COLOR_ERROR);
-                }
-            }
-
-            let window = window.as_weak();
-            slint::Timer::single_shot(Duration::from_secs(5), move || {
-                if let Some(window) = window.upgrade() {
-                    window.set_settings_status("".into());
-                }
-            });
+            show_save_status(&window, config::save(&settings));
         });
     }
 
@@ -164,25 +138,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 settings
             };
             window.set_notification_sound_index(sound_choice_index(sound));
-            match config::save(&settings) {
-                Ok(()) => {
-                    window.set_settings_status("Saved.".into());
-                    window.set_settings_status_color(STATUS_COLOR_OK);
-                }
-                Err(e) => {
-                    window.set_settings_status(format!("Failed to save: {e}").into());
-                    window.set_settings_status_color(STATUS_COLOR_ERROR);
-                }
-            }
-
-            let window = window.as_weak();
-            slint::Timer::single_shot(Duration::from_secs(5), move || {
-                if let Some(window) = window.upgrade() {
-                    window.set_settings_status("".into());
-                }
-            });
+            show_save_status(&window, config::save(&settings));
         });
     }
+
+    window.on_preview_sound(preview_notification_sound);
 
     {
         let window = window.as_weak();
@@ -220,6 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window.set_detail_supports_dpi(summary.supports_dpi);
             window.set_detail_supports_polling_rate(summary.supports_polling_rate);
             window.set_detail_supports_button_mapping(summary.supports_button_mapping);
+            window.set_detail_dpi_help(dpi_help_text(summary.dpi_range).into());
             window.set_detail_has_battery(summary.battery.is_some());
             window.set_detail_battery_percent(summary.battery.map(|b| b.level).unwrap_or(0) as i32);
             window.set_detail_charging(summary.battery.map(|b| b.is_charging).unwrap_or(false));
@@ -360,6 +321,32 @@ fn display_name(name: &str) -> &str {
     name.strip_prefix("SteelSeries ").unwrap_or(name)
 }
 
+/// Short label shown next to a device's name in the list when it's reachable
+/// over more than one transport (e.g. a wireless dongle plus a USB cable
+/// plugged in to charge), since both legitimately produce separate rows.
+fn connection_label(kind: registry::ConnectionType) -> &'static str {
+    match kind {
+        registry::ConnectionType::UsbWired => "USB",
+        registry::ConnectionType::Dongle24Ghz => "2.4GHz",
+        registry::ConnectionType::Bluetooth => "Bluetooth",
+        registry::ConnectionType::Unknown => "",
+    }
+}
+
+/// Formats a device's valid DPI range as help text for the detail page.
+/// The "up to 5 presets" figure is hardcoded because it's currently enforced
+/// only in `Rival3Wireless::set_dpi`'s preset-count check and not exposed
+/// through `ConfigurableDpi` — acceptable since Rival 3 Wireless is the only
+/// implementor today; revisit if a device with a different limit is added.
+fn dpi_help_text(range: Option<(u16, u16, u16)>) -> String {
+    match range {
+        Some((min, max, step)) => {
+            format!("Supports {min}\u{2013}{max} DPI in steps of {step}, up to 5 presets.")
+        }
+        None => String::new(),
+    }
+}
+
 /// Formats each battery-powered device as "Name — NN%" for the tray menu's
 /// disabled info rows. Devices without a battery are omitted.
 fn format_device_labels(devices: &[DeviceSummary]) -> Vec<String> {
@@ -367,7 +354,8 @@ fn format_device_labels(devices: &[DeviceSummary]) -> Vec<String> {
         .iter()
         .filter_map(|d| {
             let battery = d.battery?;
-            Some(format!("{} — {}%", display_name(&d.name), battery.level))
+            let charging = if battery.is_charging { " (Charging)" } else { "" };
+            Some(format!("{} — {}%{}", display_name(&d.name), battery.level, charging))
         })
         .collect()
 }
@@ -401,6 +389,30 @@ fn sound_choice_from_index(index: i32) -> config::SoundChoice {
     }
 }
 
+/// Fires a short-lived preview notification for the given sound choice, so
+/// the user can hear it before applying. Unlike a real low-battery alert,
+/// this always auto-dismisses and never uses `Urgency::Critical`.
+fn preview_notification_sound(index: i32) {
+    let mut notification = notify_rust::Notification::new();
+    notification
+        .summary("CtrlGear")
+        .body("Notification sound preview")
+        .timeout(notify_rust::Timeout::Milliseconds(3000));
+    match sound_choice_from_index(index) {
+        config::SoundChoice::Silent => {
+            notification.hint(notify_rust::Hint::SuppressSound(true));
+        }
+        config::SoundChoice::Default => {}
+        config::SoundChoice::DialogWarning => {
+            notification.sound_name("dialog-warning");
+        }
+        config::SoundChoice::MessageNewInstant => {
+            notification.sound_name("message-new-instant");
+        }
+    }
+    let _ = notification.show();
+}
+
 struct BatteryState {
     notified: bool,
     last_level: u8,
@@ -408,20 +420,25 @@ struct BatteryState {
 
 const BATTERY_SWAP_JUMP_THRESHOLD: u8 = 15;
 
-/// Fires a low-battery notification the first time a device's level drops
-/// below [`LOW_BATTERY_THRESHOLD`], and allows it to fire again only after
-/// the device recovers back above the threshold and drops below it again.
-/// Timeout and sound follow `settings.notification_persistent`/`notification_sound`.
+/// Determines which devices should fire a low-battery notification this
+/// poll, updating `states` accordingly. Pure state-tracking logic with no
+/// I/O, so it's safe to call from tests without side effects — the actual
+/// `notify-rust` call lives in [`check_low_battery`].
+///
+/// Fires the first time a device's level drops below
+/// [`LOW_BATTERY_THRESHOLD`], and allows it to fire again only after the
+/// device recovers back above the threshold and drops below it again.
 ///
 /// A level jump of at least [`BATTERY_SWAP_JUMP_THRESHOLD`] percentage points
 /// since the last poll, while a low-battery episode is active, is treated as
 /// a battery swap: it clears the episode without notifying on the jump
 /// itself, so a later re-drop below the threshold notifies again.
-fn check_low_battery(
+fn low_battery_transitions(
     devices: &[DeviceSummary],
     states: &mut std::collections::HashMap<u16, BatteryState>,
-    settings: &config::Settings,
-) {
+) -> Vec<(String, u8)> {
+    let mut transitions = Vec::new();
+
     for d in devices {
         let Some(battery) = d.battery else { continue };
         let state = states
@@ -437,32 +454,46 @@ fn check_low_battery(
 
         if battery.level < LOW_BATTERY_THRESHOLD && !state.notified {
             state.notified = true;
-            let mut notification = notify_rust::Notification::new();
-            notification
-                .summary("Low battery")
-                .body(&format!("{} is at {}%", display_name(&d.name), battery.level))
-                .urgency(notify_rust::Urgency::Critical)
-                .timeout(if settings.notification_persistent {
-                    notify_rust::Timeout::Never
-                } else {
-                    notify_rust::Timeout::Default
-                });
-            match settings.notification_sound {
-                config::SoundChoice::Silent => {
-                    notification.hint(notify_rust::Hint::SuppressSound(true));
-                }
-                config::SoundChoice::Default => {}
-                config::SoundChoice::DialogWarning => {
-                    notification.sound_name("dialog-warning");
-                }
-                config::SoundChoice::MessageNewInstant => {
-                    notification.sound_name("message-new-instant");
-                }
-            }
-            let _ = notification.show();
+            transitions.push((display_name(&d.name).to_string(), battery.level));
         } else if battery.level >= LOW_BATTERY_THRESHOLD && state.notified {
             state.notified = false;
         }
+    }
+
+    transitions
+}
+
+/// Fires a desktop notification for each low-battery transition. Timeout and
+/// sound follow `settings.notification_persistent`/`notification_sound`.
+fn check_low_battery(
+    devices: &[DeviceSummary],
+    states: &mut std::collections::HashMap<u16, BatteryState>,
+    settings: &config::Settings,
+) {
+    for (name, level) in low_battery_transitions(devices, states) {
+        let mut notification = notify_rust::Notification::new();
+        notification
+            .summary("Low battery")
+            .body(&format!("{} is at {}%", name, level))
+            .urgency(notify_rust::Urgency::Critical)
+            .timeout(if settings.notification_persistent {
+                notify_rust::Timeout::Never
+            } else {
+                notify_rust::Timeout::Default
+            });
+        match settings.notification_sound {
+            config::SoundChoice::Silent => {
+                notification.hint(notify_rust::Hint::SuppressSound(true));
+            }
+            config::SoundChoice::Default => {}
+            config::SoundChoice::DialogWarning => {
+                notification.sound_name("dialog-warning");
+            }
+            config::SoundChoice::MessageNewInstant => {
+                notification.sound_name("message-new-instant");
+            }
+        }
+        let _ = notification.show();
     }
 }
 
@@ -470,6 +501,7 @@ fn check_low_battery(
 mod tests {
     use super::*;
     use ctrlgear_core::protocol::BatteryStatus;
+    use ctrlgear_core::registry::ConnectionType;
 
     fn device(name: &str, battery: Option<BatteryStatus>) -> DeviceSummary {
         DeviceSummary {
@@ -479,9 +511,32 @@ mod tests {
             supports_dpi: false,
             supports_polling_rate: false,
             supports_button_mapping: false,
+            dpi_range: None,
+            connection_type: ConnectionType::Unknown,
             battery,
             note: None,
         }
+    }
+
+    #[test]
+    fn dpi_help_text_formats_the_range() {
+        assert_eq!(
+            dpi_help_text(Some((100, 18000, 100))),
+            "Supports 100\u{2013}18000 DPI in steps of 100, up to 5 presets."
+        );
+    }
+
+    #[test]
+    fn dpi_help_text_empty_when_no_range() {
+        assert_eq!(dpi_help_text(None), "");
+    }
+
+    #[test]
+    fn connection_label_maps_each_connection_type() {
+        assert_eq!(connection_label(ConnectionType::UsbWired), "USB");
+        assert_eq!(connection_label(ConnectionType::Dongle24Ghz), "2.4GHz");
+        assert_eq!(connection_label(ConnectionType::Bluetooth), "Bluetooth");
+        assert_eq!(connection_label(ConnectionType::Unknown), "");
     }
 
     #[test]
@@ -512,8 +567,17 @@ mod tests {
         ];
         assert_eq!(
             format_device_labels(&devices),
-            vec!["Rival 3 Wireless — 80%", "Arctis Nova 7 — 15%"]
+            vec!["Rival 3 Wireless — 80% (Charging)", "Arctis Nova 7 — 15%"]
         );
+    }
+
+    #[test]
+    fn format_device_labels_marks_charging_devices() {
+        let devices = vec![device(
+            "SteelSeries Rival 3 Wireless",
+            Some(BatteryStatus { level: 55, is_charging: true }),
+        )];
+        assert_eq!(format_device_labels(&devices), vec!["Rival 3 Wireless — 55% (Charging)"]);
     }
 
     fn device_with_id(product_id: u16, battery: Option<BatteryStatus>) -> DeviceSummary {
@@ -524,6 +588,8 @@ mod tests {
             supports_dpi: false,
             supports_polling_rate: false,
             supports_button_mapping: false,
+            dpi_range: None,
+            connection_type: ConnectionType::Unknown,
             battery,
             note: None,
         }
@@ -534,9 +600,10 @@ mod tests {
         let devices = vec![device_with_id(1, Some(BatteryStatus { level: 20, is_charging: false }))];
         let mut states = std::collections::HashMap::new();
 
-        check_low_battery(&devices, &mut states, &config::Settings::default());
+        let transitions = low_battery_transitions(&devices, &mut states);
 
         assert!(states.get(&1).unwrap().notified);
+        assert_eq!(transitions, vec![("Test Device".to_string(), 20)]);
     }
 
     #[test]
@@ -544,11 +611,12 @@ mod tests {
         let devices = vec![device_with_id(1, Some(BatteryStatus { level: 20, is_charging: false }))];
         let mut states = std::collections::HashMap::new();
 
-        check_low_battery(&devices, &mut states, &config::Settings::default());
-        check_low_battery(&devices, &mut states, &config::Settings::default());
+        low_battery_transitions(&devices, &mut states);
+        let second_transitions = low_battery_transitions(&devices, &mut states);
 
         assert_eq!(states.len(), 1);
         assert!(states.get(&1).unwrap().notified);
+        assert!(second_transitions.is_empty());
     }
 
     #[test]
@@ -557,9 +625,10 @@ mod tests {
         states.insert(1u16, BatteryState { notified: true, last_level: 20 });
         let devices = vec![device_with_id(1, Some(BatteryStatus { level: 30, is_charging: false }))];
 
-        check_low_battery(&devices, &mut states, &config::Settings::default());
+        let transitions = low_battery_transitions(&devices, &mut states);
 
         assert!(!states.get(&1).unwrap().notified);
+        assert!(transitions.is_empty());
     }
 
     #[test]
@@ -567,9 +636,10 @@ mod tests {
         let devices = vec![device_with_id(1, None)];
         let mut states = std::collections::HashMap::new();
 
-        check_low_battery(&devices, &mut states, &config::Settings::default());
+        let transitions = low_battery_transitions(&devices, &mut states);
 
         assert!(states.is_empty());
+        assert!(transitions.is_empty());
     }
 
     #[test]
@@ -578,15 +648,17 @@ mod tests {
         states.insert(1u16, BatteryState { notified: true, last_level: 10 });
         let jumped = vec![device_with_id(1, Some(BatteryStatus { level: 60, is_charging: false }))];
 
-        check_low_battery(&jumped, &mut states, &config::Settings::default());
+        let jump_transitions = low_battery_transitions(&jumped, &mut states);
 
         assert!(!states.get(&1).unwrap().notified);
+        assert!(jump_transitions.is_empty());
 
         let dropped_again = vec![device_with_id(1, Some(BatteryStatus { level: 20, is_charging: false }))];
 
-        check_low_battery(&dropped_again, &mut states, &config::Settings::default());
+        let drop_transitions = low_battery_transitions(&dropped_again, &mut states);
 
         assert!(states.get(&1).unwrap().notified);
+        assert_eq!(drop_transitions, vec![("Test Device".to_string(), 20)]);
     }
 }
 
@@ -619,6 +691,7 @@ fn to_card_model(devices: &[DeviceSummary]) -> slint::ModelRc<DeviceCardData> {
                 status: d.note.clone().unwrap_or_default().into(),
                 accent_start,
                 accent_end,
+                connection_label: connection_label(d.connection_type).into(),
             }
         })
         .collect();

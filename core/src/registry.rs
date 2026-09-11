@@ -4,7 +4,9 @@
 //! concrete device implementation. Adding support for a new device means
 //! adding a variant here and to [`Device`] — nowhere else.
 
-use crate::device::arctis_nova_7::{ArctisNova7, PRODUCT_ID as ARCTIS_NOVA_7_PRODUCT_ID};
+use crate::device::arctis_nova_7::{
+    ArctisNova7, PRODUCT_ID as ARCTIS_NOVA_7_PRODUCT_ID, WIRED_PRODUCT_ID as ARCTIS_NOVA_7_WIRED_PRODUCT_ID,
+};
 use crate::device::rival3_wireless::{Rival3Wireless, PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID};
 use crate::device::{ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice, WirelessDevice};
 use crate::hid::SteelSeriesHid;
@@ -60,6 +62,14 @@ impl Device {
         matches!(self, Device::Rival3Wireless(_))
     }
 
+    /// Valid DPI range as (min, max, step), for devices with configurable DPI.
+    pub fn dpi_range(&self) -> Option<(u16, u16, u16)> {
+        match self {
+            Device::Rival3Wireless(d) => Some(d.dpi_range()),
+            Device::ArctisNova7(_) => None,
+        }
+    }
+
     pub fn set_dpi(&self, values: &[u16]) -> Result<()> {
         match self {
             Device::Rival3Wireless(d) => d.set_dpi(values),
@@ -85,6 +95,37 @@ impl Device {
                 "Arctis Nova 7 has no configurable button mapping".to_string(),
             )),
         }
+    }
+}
+
+/// How a device is physically reached. A device that can be reached over
+/// more than one transport at once (e.g. a wireless dongle plus a USB
+/// charging cable) legitimately produces one [`DeviceSummary`] per product
+/// ID — see [`discover`]'s per-product-ID dedup — so this exists to label
+/// each row rather than to collapse them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnectionType {
+    UsbWired,
+    Dongle24Ghz,
+    Bluetooth,
+    Unknown,
+}
+
+/// Pure mapping from a HID enumeration's bus type + product ID to a
+/// [`ConnectionType`]. `hidapi::BusType::Usb` alone can't distinguish a
+/// direct USB cable from a 2.4GHz USB dongle receiver (both enumerate as
+/// USB at the bus level) — only the product ID can, which is why known
+/// wired-mode product IDs (e.g. [`ARCTIS_NOVA_7_WIRED_PRODUCT_ID`]) are
+/// matched explicitly here rather than derived generically.
+fn connection_type_for(bus: hidapi::BusType, product_id: u16) -> ConnectionType {
+    match bus {
+        hidapi::BusType::Bluetooth => ConnectionType::Bluetooth,
+        hidapi::BusType::Usb => match product_id {
+            ARCTIS_NOVA_7_WIRED_PRODUCT_ID => ConnectionType::UsbWired,
+            RIVAL3_WIRELESS_PRODUCT_ID | ARCTIS_NOVA_7_PRODUCT_ID => ConnectionType::Dongle24Ghz,
+            _ => ConnectionType::Unknown,
+        },
+        _ => ConnectionType::Unknown,
     }
 }
 
@@ -123,6 +164,8 @@ pub struct DeviceSummary {
     pub supports_dpi: bool,
     pub supports_polling_rate: bool,
     pub supports_button_mapping: bool,
+    pub dpi_range: Option<(u16, u16, u16)>,
+    pub connection_type: ConnectionType,
     pub battery: Option<BatteryStatus>,
     /// Set when the device is supported but a query (e.g. battery) failed,
     /// or left as the raw HID product string for unsupported devices.
@@ -140,6 +183,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
         .filter(|d| seen.insert(d.product_id()))
         .map(|d| {
             let product_id = d.product_id();
+            let connection_type = connection_type_for(d.bus_type(), product_id);
 
             if !is_supported(product_id) {
                 return DeviceSummary {
@@ -152,6 +196,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_dpi: false,
                     supports_polling_rate: false,
                     supports_button_mapping: false,
+                    dpi_range: None,
+                    connection_type,
                     battery: None,
                     note: None,
                 };
@@ -163,6 +209,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     let supports_dpi = device.supports_dpi();
                     let supports_polling_rate = device.supports_polling_rate();
                     let supports_button_mapping = device.supports_button_mapping();
+                    let dpi_range = device.dpi_range();
                     match device.battery_status() {
                         Ok(status) => DeviceSummary {
                             product_id,
@@ -171,6 +218,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_dpi,
                             supports_polling_rate,
                             supports_button_mapping,
+                            dpi_range,
+                            connection_type,
                             battery: Some(status),
                             note: None,
                         },
@@ -181,6 +230,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_dpi,
                             supports_polling_rate,
                             supports_button_mapping,
+                            dpi_range,
+                            connection_type,
                             battery: None,
                             note: Some(e.to_string()),
                         },
@@ -196,10 +247,50 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_dpi: false,
                     supports_polling_rate: false,
                     supports_button_mapping: false,
+                    dpi_range: None,
+                    connection_type,
                     battery: None,
                     note: Some(e.to_string()),
                 },
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn connection_type_for_bluetooth_bus_is_always_bluetooth() {
+        assert_eq!(
+            connection_type_for(hidapi::BusType::Bluetooth, 0xffff),
+            ConnectionType::Bluetooth
+        );
+    }
+
+    #[test]
+    fn connection_type_for_known_wired_product_id_is_usb_wired() {
+        assert_eq!(
+            connection_type_for(hidapi::BusType::Usb, ARCTIS_NOVA_7_WIRED_PRODUCT_ID),
+            ConnectionType::UsbWired
+        );
+    }
+
+    #[test]
+    fn connection_type_for_known_wireless_product_ids_is_dongle() {
+        assert_eq!(
+            connection_type_for(hidapi::BusType::Usb, ARCTIS_NOVA_7_PRODUCT_ID),
+            ConnectionType::Dongle24Ghz
+        );
+        assert_eq!(
+            connection_type_for(hidapi::BusType::Usb, RIVAL3_WIRELESS_PRODUCT_ID),
+            ConnectionType::Dongle24Ghz
+        );
+    }
+
+    #[test]
+    fn connection_type_for_unknown_usb_product_id_is_unknown() {
+        assert_eq!(connection_type_for(hidapi::BusType::Usb, 0xffff), ConnectionType::Unknown);
+    }
 }

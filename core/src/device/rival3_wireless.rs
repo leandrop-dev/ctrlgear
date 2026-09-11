@@ -87,6 +87,17 @@ impl Rival3Wireless {
                 ))
             })
     }
+
+    /// Derives (min, max, step) from `DPI_MAPPING` itself, so the reported
+    /// valid range always reflects the actual supported values rather than
+    /// a separately hand-maintained duplicate that could silently drift if
+    /// the mapping table changes.
+    fn dpi_mapping_range() -> (u16, u16, u16) {
+        let min = DPI_MAPPING.first().map(|&(dpi, _)| dpi).unwrap_or(0);
+        let max = DPI_MAPPING.last().map(|&(dpi, _)| dpi).unwrap_or(0);
+        let step = DPI_MAPPING.get(1).map(|&(dpi, _)| dpi.saturating_sub(min)).unwrap_or(0);
+        (min, max, step)
+    }
 }
 
 impl SteelSeriesDevice for Rival3Wireless {
@@ -144,7 +155,7 @@ impl ConfigurableDpi for Rival3Wireless {
     }
 
     fn dpi_range(&self) -> (u16, u16, u16) {
-        (100, 18000, 100)
+        Self::dpi_mapping_range()
     }
 }
 
@@ -201,5 +212,29 @@ mod tests {
         assert!(Rival3Wireless::dpi_to_byte(99).is_err());
         assert!(Rival3Wireless::dpi_to_byte(150).is_err());
         assert!(Rival3Wireless::dpi_to_byte(18100).is_err());
+    }
+
+    #[test]
+    fn dpi_mapping_range_matches_known_bounds() {
+        assert_eq!(Rival3Wireless::dpi_mapping_range(), (100, 18000, 100));
+    }
+
+    /// Guards the "in steps of N" claim shown as DPI help text in the GUI
+    /// (`gui/src/main.rs::dpi_help_text`): if `DPI_MAPPING` ever gained a
+    /// gap, `dpi_mapping_range()`'s derived step would no longer describe
+    /// every entry, and this test would catch it.
+    #[test]
+    fn dpi_mapping_is_a_uniform_arithmetic_sequence_matching_its_step() {
+        let (_, _, step) = Rival3Wireless::dpi_mapping_range();
+        for pair in DPI_MAPPING.windows(2) {
+            assert_eq!(
+                pair[1].0 - pair[0].0,
+                step,
+                "gap between {:?} and {:?} doesn't match step {}",
+                pair[0],
+                pair[1],
+                step
+            );
+        }
     }
 }
