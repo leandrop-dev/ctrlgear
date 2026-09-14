@@ -1,13 +1,13 @@
-//! SteelSeries Rival 3 Wireless mouse implementation
+//! SteelSeries Rival 3 Wireless mouse profile data.
+//!
+//! Declarative data only — interpreted generically by
+//! [`crate::device::profile::ProfiledDevice`]. See that module for the
+//! command-building/response-parsing logic this data drives.
 
-use crate::device::{
-    ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice,
-    WirelessDevice,
+use crate::device::profile::{
+    BatteryProfile, ButtonsProfile, DeviceProfile, DpiProfile, PollingRateProfile,
 };
-use crate::hid::SteelSeriesHid;
-use crate::protocol::{
-    commands, BatteryStatus, PollingRate, ReportType, STEELSERIES_VENDOR_ID,
-};
+use crate::protocol::{commands, BatteryStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
 
 /// Product ID for Rival 3 Wireless (2.4 GHz mode)
@@ -63,178 +63,34 @@ const DPI_MAPPING: &[(u16, u8)] = &[
     (17700, 0xDC), (17800, 0xDD), (17900, 0xDE), (18000, 0xE0),
 ];
 
-/// SteelSeries Rival 3 Wireless mouse
-pub struct Rival3Wireless {
-    hid: SteelSeriesHid,
+/// Parses a Rival 3 Wireless battery response: `[level, _, charging]`.
+fn parse_battery(data: &[u8]) -> Result<BatteryStatus> {
+    BatteryStatus::from_response(data)
+        .ok_or_else(|| Error::InvalidParameter("Invalid battery status response".to_string()))
 }
 
-impl Rival3Wireless {
-    /// Create a new Rival 3 Wireless device instance
-    pub fn new(hid: SteelSeriesHid) -> Self {
-        Rival3Wireless { hid }
-    }
-
-    /// Convert DPI value to device byte using TrueMove Air mapping
-    fn dpi_to_byte(dpi: u16) -> Result<u8> {
-        DPI_MAPPING
-            .iter()
-            .find(|(d, _)| *d == dpi)
-            .map(|(_, byte)| *byte)
-            .ok_or_else(|| {
-                Error::InvalidParameter(format!(
-                    "Invalid DPI value: {}. Must be 100-18000 in steps of 100",
-                    dpi
-                ))
-            })
-    }
-
-    /// Derives (min, max, step) from `DPI_MAPPING` itself, so the reported
-    /// valid range always reflects the actual supported values rather than
-    /// a separately hand-maintained duplicate that could silently drift if
-    /// the mapping table changes.
-    fn dpi_mapping_range() -> (u16, u16, u16) {
-        let min = DPI_MAPPING.first().map(|&(dpi, _)| dpi).unwrap_or(0);
-        let max = DPI_MAPPING.last().map(|&(dpi, _)| dpi).unwrap_or(0);
-        let step = DPI_MAPPING.get(1).map(|&(dpi, _)| dpi.saturating_sub(min)).unwrap_or(0);
-        (min, max, step)
-    }
-}
-
-impl SteelSeriesDevice for Rival3Wireless {
-    fn name(&self) -> &str {
-        "SteelSeries Rival 3 Wireless"
-    }
-
-    fn vendor_id(&self) -> u16 {
-        STEELSERIES_VENDOR_ID
-    }
-
-    fn product_id(&self) -> u16 {
-        PRODUCT_ID
-    }
-
-    fn save(&self) -> Result<()> {
-        let command = [commands::SAVE];
-        self.hid
-            .write_command(ReportType::Output, &command, None)?;
-        Ok(())
-    }
-}
-
-impl ConfigurableDpi for Rival3Wireless {
-    fn set_dpi(&self, values: &[u16]) -> Result<()> {
-        if values.is_empty() {
-            return Err(Error::InvalidParameter(
-                "At least one DPI value required".to_string(),
-            ));
-        }
-
-        if values.len() > 5 {
-            return Err(Error::InvalidParameter(
-                "Maximum 5 DPI presets allowed".to_string(),
-            ));
-        }
-
-        // Build command: [CMD] [count] [selected_preset] [dpi1_low] [dpi1_high] [dpi2_low] ...
-        let mut command = vec![
-            commands::SENSITIVITY,
-            values.len() as u8,
-            1, // Default to first preset
-        ];
-
-        // Convert each DPI value to bytes (little-endian)
-        for &dpi in values {
-            let byte = Self::dpi_to_byte(dpi)?;
-            command.push(byte);
-            command.push(0x00); // High byte (always 0 for this range)
-        }
-
-        self.hid
-            .write_command(ReportType::Output, &command, None)?;
-        Ok(())
-    }
-
-    fn dpi_range(&self) -> (u16, u16, u16) {
-        Self::dpi_mapping_range()
-    }
-}
-
-impl ConfigurablePollingRate for Rival3Wireless {
-    fn set_polling_rate(&self, hz: u16) -> Result<()> {
-        let rate = PollingRate::from_hz(hz)?;
-        let command = [commands::POLLING_RATE, rate.to_byte()];
-        self.hid
-            .write_command(ReportType::Output, &command, None)?;
-        Ok(())
-    }
-}
-
-impl WirelessDevice for Rival3Wireless {
-    fn battery_status(&self) -> Result<BatteryStatus> {
-        let command = [commands::BATTERY_LEVEL, 0x01];
-        let response = self
-            .hid
-            .write_command(ReportType::Output, &command, Some(3))?;
-
-        BatteryStatus::from_response(&response).ok_or_else(|| {
-            Error::InvalidParameter("Invalid battery status response".to_string())
-        })
-    }
-}
-
-impl ConfigurableButtons for Rival3Wireless {
-    fn set_button_mapping(&self, mapping: &crate::buttons::ButtonMapping) -> Result<()> {
-        let mut command = vec![commands::BUTTON_MAPPING];
-        command.extend_from_slice(&mapping.encode());
-
-        self.hid
-            .write_command(ReportType::Output, &command, None)?;
-        Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_dpi_to_byte_mapping() {
-        assert_eq!(Rival3Wireless::dpi_to_byte(100).unwrap(), 0x00);
-        assert_eq!(Rival3Wireless::dpi_to_byte(400).unwrap(), 0x04);
-        assert_eq!(Rival3Wireless::dpi_to_byte(800).unwrap(), 0x09);
-        assert_eq!(Rival3Wireless::dpi_to_byte(1600).unwrap(), 0x13);
-        assert_eq!(Rival3Wireless::dpi_to_byte(3200).unwrap(), 0x27);
-        assert_eq!(Rival3Wireless::dpi_to_byte(18000).unwrap(), 0xE0);
-    }
-
-    #[test]
-    fn test_dpi_to_byte_invalid() {
-        assert!(Rival3Wireless::dpi_to_byte(99).is_err());
-        assert!(Rival3Wireless::dpi_to_byte(150).is_err());
-        assert!(Rival3Wireless::dpi_to_byte(18100).is_err());
-    }
-
-    #[test]
-    fn dpi_mapping_range_matches_known_bounds() {
-        assert_eq!(Rival3Wireless::dpi_mapping_range(), (100, 18000, 100));
-    }
-
-    /// Guards the "in steps of N" claim shown as DPI help text in the GUI
-    /// (`gui/src/main.rs::dpi_help_text`): if `DPI_MAPPING` ever gained a
-    /// gap, `dpi_mapping_range()`'s derived step would no longer describe
-    /// every entry, and this test would catch it.
-    #[test]
-    fn dpi_mapping_is_a_uniform_arithmetic_sequence_matching_its_step() {
-        let (_, _, step) = Rival3Wireless::dpi_mapping_range();
-        for pair in DPI_MAPPING.windows(2) {
-            assert_eq!(
-                pair[1].0 - pair[0].0,
-                step,
-                "gap between {:?} and {:?} doesn't match step {}",
-                pair[0],
-                pair[1],
-                step
-            );
-        }
-    }
-}
+/// SteelSeries Rival 3 Wireless device profile.
+pub const RIVAL3_WIRELESS_PROFILE: DeviceProfile = DeviceProfile {
+    name: "SteelSeries Rival 3 Wireless",
+    vendor_id: STEELSERIES_VENDOR_ID,
+    product_ids: &[PRODUCT_ID],
+    usage_page: 0xffc0,
+    interface: None,
+    battery: Some(BatteryProfile {
+        command: commands::BATTERY_LEVEL,
+        extra_byte: Some(0x01),
+        readback_length: 3,
+        parse: parse_battery,
+    }),
+    dpi: Some(DpiProfile {
+        command: commands::SENSITIVITY,
+        mapping: DPI_MAPPING,
+        max_presets: 5,
+    }),
+    polling_rate: Some(PollingRateProfile {
+        command: commands::POLLING_RATE,
+    }),
+    buttons: Some(ButtonsProfile {
+        command: commands::BUTTON_MAPPING,
+    }),
+};

@@ -335,9 +335,10 @@ fn connection_label(kind: registry::ConnectionType) -> &'static str {
 
 /// Formats a device's valid DPI range as help text for the detail page.
 /// The "up to 5 presets" figure is hardcoded because it's currently enforced
-/// only in `Rival3Wireless::set_dpi`'s preset-count check and not exposed
-/// through `ConfigurableDpi` — acceptable since Rival 3 Wireless is the only
-/// implementor today; revisit if a device with a different limit is added.
+/// only by `RIVAL3_WIRELESS_PROFILE`'s `DpiProfile::max_presets` (checked in
+/// `ProfiledDevice::set_dpi`) and not exposed through `ConfigurableDpi` —
+/// acceptable since Rival 3 Wireless is the only DPI-capable device today;
+/// revisit if a device with a different limit is added.
 fn dpi_help_text(range: Option<(u16, u16, u16)>) -> String {
     match range {
         Some((min, max, step)) => {

@@ -1,12 +1,8 @@
 use clap::{Parser, Subcommand};
 use ctrlgear_core::buttons::ButtonMapping;
-use ctrlgear_core::device::rival3_wireless::{Rival3Wireless, PRODUCT_ID};
-use ctrlgear_core::device::{
-    ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice,
-    WirelessDevice,
-};
-use ctrlgear_core::hid::SteelSeriesHid;
+use ctrlgear_core::device::rival3_wireless::PRODUCT_ID;
 use ctrlgear_core::protocol::STEELSERIES_VENDOR_ID;
+use ctrlgear_core::registry;
 
 #[derive(Parser)]
 #[command(name = "ctrlgear-cli")]
@@ -57,8 +53,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     // Open Rival 3 Wireless device
-    let hid = SteelSeriesHid::open(&api, STEELSERIES_VENDOR_ID, PRODUCT_ID)?;
-    let device = Rival3Wireless::new(hid);
+    let device = registry::open(&api, PRODUCT_ID)?;
 
     match cli.command {
         Commands::Dpi { values } => {

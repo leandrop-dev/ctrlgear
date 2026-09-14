@@ -1,100 +1,94 @@
 //! Discovery and instantiation of connected SteelSeries devices.
 //!
 //! This is the single place that knows which product IDs map to which
-//! concrete device implementation. Adding support for a new device means
-//! adding a variant here and to [`Device`] — nowhere else.
+//! [`DeviceProfile`]. Adding support for a new device means adding a
+//! `const DeviceProfile` (see `device::rival3_wireless` / `device::arctis_nova_7`
+//! for examples) and listing it in [`PROFILES`] — nowhere else.
 
 use crate::device::arctis_nova_7::{
-    ArctisNova7, PRODUCT_ID as ARCTIS_NOVA_7_PRODUCT_ID, WIRED_PRODUCT_ID as ARCTIS_NOVA_7_WIRED_PRODUCT_ID,
+    ARCTIS_NOVA_7_PROFILE, PRODUCT_ID as ARCTIS_NOVA_7_PRODUCT_ID,
+    WIRED_PRODUCT_ID as ARCTIS_NOVA_7_WIRED_PRODUCT_ID,
 };
-use crate::device::rival3_wireless::{Rival3Wireless, PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID};
+use crate::device::profile::{DeviceProfile, ProfiledDevice};
+use crate::device::rival3_wireless::{RIVAL3_WIRELESS_PROFILE, PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID};
 use crate::device::{ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice, WirelessDevice};
 use crate::hid::SteelSeriesHid;
 use crate::protocol::{BatteryStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
 use hidapi::HidApi;
 
-/// A concrete, opened SteelSeries device.
-///
-/// A thin enum rather than a trait object: matching on two variants is
-/// simpler than a `dyn` trait bound spanning `SteelSeriesDevice` +
-/// `WirelessDevice` + `ConfigurableDpi`, and not every device implements
-/// every trait (a headset has no DPI).
-pub enum Device {
-    Rival3Wireless(Rival3Wireless),
-    ArctisNova7(ArctisNova7),
+/// Every known device profile, matched by product ID in [`open`],
+/// [`is_supported`] and [`discover`]. Adding a device family means adding
+/// its `const DeviceProfile` here.
+pub const PROFILES: &[DeviceProfile] = &[RIVAL3_WIRELESS_PROFILE, ARCTIS_NOVA_7_PROFILE];
+
+/// Looks up the profile claiming `product_id`, if any.
+fn profile_for(product_id: u16) -> Option<&'static DeviceProfile> {
+    PROFILES.iter().find(|p| p.product_ids.contains(&product_id))
+}
+
+/// A concrete, opened SteelSeries device: a [`ProfiledDevice`] plus the
+/// capability-flag/range accessors [`DeviceSummary`] needs, derived from the
+/// device's [`DeviceProfile`] rather than matched on a device type.
+pub struct Device {
+    inner: ProfiledDevice,
 }
 
 impl Device {
     pub fn name(&self) -> &str {
-        match self {
-            Device::Rival3Wireless(d) => d.name(),
-            Device::ArctisNova7(d) => d.name(),
-        }
+        self.inner.name()
+    }
+
+    pub fn vendor_id(&self) -> u16 {
+        self.inner.vendor_id()
     }
 
     pub fn product_id(&self) -> u16 {
-        match self {
-            Device::Rival3Wireless(d) => d.product_id(),
-            Device::ArctisNova7(d) => d.product_id(),
-        }
+        self.inner.product_id()
+    }
+
+    pub fn save(&self) -> Result<()> {
+        self.inner.save()
     }
 
     pub fn battery_status(&self) -> Result<BatteryStatus> {
-        match self {
-            Device::Rival3Wireless(d) => d.battery_status(),
-            Device::ArctisNova7(d) => d.battery_status(),
-        }
+        self.inner.battery_status()
     }
 
     /// Whether this device has a configurable DPI (mice only).
     pub fn supports_dpi(&self) -> bool {
-        matches!(self, Device::Rival3Wireless(_))
+        self.inner.profile().dpi.is_some()
     }
 
     /// Whether this device has a configurable polling rate (mice only).
     pub fn supports_polling_rate(&self) -> bool {
-        matches!(self, Device::Rival3Wireless(_))
+        self.inner.profile().polling_rate.is_some()
     }
 
     /// Whether this device has configurable button mapping (mice only).
     pub fn supports_button_mapping(&self) -> bool {
-        matches!(self, Device::Rival3Wireless(_))
+        self.inner.profile().buttons.is_some()
     }
 
     /// Valid DPI range as (min, max, step), for devices with configurable DPI.
     pub fn dpi_range(&self) -> Option<(u16, u16, u16)> {
-        match self {
-            Device::Rival3Wireless(d) => Some(d.dpi_range()),
-            Device::ArctisNova7(_) => None,
+        if self.inner.profile().dpi.is_some() {
+            Some(self.inner.dpi_range())
+        } else {
+            None
         }
     }
 
     pub fn set_dpi(&self, values: &[u16]) -> Result<()> {
-        match self {
-            Device::Rival3Wireless(d) => d.set_dpi(values),
-            Device::ArctisNova7(_) => Err(Error::Unsupported(
-                "Arctis Nova 7 has no configurable DPI".to_string(),
-            )),
-        }
+        self.inner.set_dpi(values)
     }
 
     pub fn set_polling_rate(&self, hz: u16) -> Result<()> {
-        match self {
-            Device::Rival3Wireless(d) => d.set_polling_rate(hz),
-            Device::ArctisNova7(_) => Err(Error::Unsupported(
-                "Arctis Nova 7 has no configurable polling rate".to_string(),
-            )),
-        }
+        self.inner.set_polling_rate(hz)
     }
 
     pub fn set_button_mapping(&self, mapping: &crate::buttons::ButtonMapping) -> Result<()> {
-        match self {
-            Device::Rival3Wireless(d) => d.set_button_mapping(mapping),
-            Device::ArctisNova7(_) => Err(Error::Unsupported(
-                "Arctis Nova 7 has no configurable button mapping".to_string(),
-            )),
-        }
+        self.inner.set_button_mapping(mapping)
     }
 }
 
@@ -131,28 +125,29 @@ fn connection_type_for(bus: hidapi::BusType, product_id: u16) -> ConnectionType 
 
 /// Whether `product_id` has a concrete [`Device`] implementation.
 pub fn is_supported(product_id: u16) -> bool {
-    matches!(
-        product_id,
-        RIVAL3_WIRELESS_PRODUCT_ID | ARCTIS_NOVA_7_PRODUCT_ID
-    )
+    profile_for(product_id).is_some()
 }
 
 /// Open a supported device by product ID.
 pub fn open(api: &HidApi, product_id: u16) -> Result<Device> {
-    match product_id {
-        RIVAL3_WIRELESS_PRODUCT_ID => {
-            let hid = SteelSeriesHid::open(api, STEELSERIES_VENDOR_ID, product_id)?;
-            Ok(Device::Rival3Wireless(Rival3Wireless::new(hid)))
-        }
-        ARCTIS_NOVA_7_PRODUCT_ID => {
-            let hid = SteelSeriesHid::open(api, STEELSERIES_VENDOR_ID, product_id)?;
-            Ok(Device::ArctisNova7(ArctisNova7::new(hid)))
-        }
-        _ => Err(Error::Unsupported(format!(
+    let profile = profile_for(product_id).ok_or_else(|| {
+        Error::Unsupported(format!(
             "No configuration support for device {:04x}:{:04x}",
             STEELSERIES_VENDOR_ID, product_id
-        ))),
-    }
+        ))
+    })?;
+
+    let hid = SteelSeriesHid::open(
+        api,
+        profile.vendor_id,
+        product_id,
+        profile.usage_page,
+        profile.interface,
+    )?;
+
+    Ok(Device {
+        inner: ProfiledDevice::new(hid, profile, product_id),
+    })
 }
 
 /// A connected SteelSeries device, with battery status already queried for
@@ -172,14 +167,16 @@ pub struct DeviceSummary {
     pub note: Option<String>,
 }
 
-/// Enumerate every connected SteelSeries device on its configuration
-/// interface (usage_page 0xffc0), opening and querying battery status for
-/// the ones with a concrete [`Device`] implementation.
+/// Enumerate every connected SteelSeries device on a configuration
+/// interface (any usage page declared by [`PROFILES`]), opening and
+/// querying battery status for the ones with a concrete [`Device`]
+/// implementation.
 pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
     let mut seen = std::collections::HashSet::new();
+    let usage_pages: Vec<u16> = PROFILES.iter().map(|p| p.usage_page).collect();
 
     api.device_list()
-        .filter(|d| d.vendor_id() == STEELSERIES_VENDOR_ID && d.usage_page() == 0xffc0)
+        .filter(|d| d.vendor_id() == STEELSERIES_VENDOR_ID && usage_pages.contains(&d.usage_page()))
         .filter(|d| seen.insert(d.product_id()))
         .map(|d| {
             let product_id = d.product_id();
@@ -292,5 +289,42 @@ mod tests {
     #[test]
     fn connection_type_for_unknown_usb_product_id_is_unknown() {
         assert_eq!(connection_type_for(hidapi::BusType::Usb, 0xffff), ConnectionType::Unknown);
+    }
+
+    /// Guards against a silent product-ID collision across [`PROFILES`]: two
+    /// profiles claiming the same ID would make [`profile_for`] (and so
+    /// [`open`]) silently pick whichever comes first in the table.
+    #[test]
+    fn every_profile_product_id_is_unique() {
+        let mut seen = std::collections::HashSet::new();
+        for profile in PROFILES {
+            for &id in profile.product_ids {
+                assert!(
+                    seen.insert(id),
+                    "duplicate product_id 0x{:04x} claimed by more than one DeviceProfile",
+                    id
+                );
+            }
+        }
+    }
+
+    /// `supports_dpi`/`supports_polling_rate`/`supports_button_mapping`/
+    /// `dpi_range` must reflect each profile's actual capability fields —
+    /// this is what gates every capability-specific section in the GUI, so a
+    /// wrong flag here breaks the UI without a compile error.
+    #[test]
+    fn rival3_wireless_profile_declares_mouse_capabilities() {
+        assert!(RIVAL3_WIRELESS_PROFILE.dpi.is_some());
+        assert!(RIVAL3_WIRELESS_PROFILE.polling_rate.is_some());
+        assert!(RIVAL3_WIRELESS_PROFILE.buttons.is_some());
+        assert!(RIVAL3_WIRELESS_PROFILE.battery.is_some());
+    }
+
+    #[test]
+    fn arctis_nova_7_profile_is_battery_only() {
+        assert!(ARCTIS_NOVA_7_PROFILE.battery.is_some());
+        assert!(ARCTIS_NOVA_7_PROFILE.dpi.is_none());
+        assert!(ARCTIS_NOVA_7_PROFILE.polling_rate.is_none());
+        assert!(ARCTIS_NOVA_7_PROFILE.buttons.is_none());
     }
 }
