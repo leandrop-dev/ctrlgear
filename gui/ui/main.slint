@@ -1,4 +1,4 @@
-import { Button, ComboBox, LineEdit, ScrollView, SpinBox, Palette } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, ScrollView, SpinBox, Palette } from "std-widgets.slint";
 
 component NavItem inherits Rectangle {
     in property <string> label;
@@ -290,178 +290,182 @@ component DeviceDetailPage inherits Rectangle {
     callback apply-polling-rate(int);
     callback apply-button-mapping([int]);
 
-    VerticalLayout {
-        padding: 18px;
-        spacing: 16px;
+    ScrollView {
+        vertical-stretch: 1;
 
-        Button { text: "← Devices"; horizontal-stretch: 0; clicked => { root.back(); } }
+        VerticalLayout {
+            padding: 18px;
+            spacing: 16px;
 
-        HorizontalLayout {
-            spacing: 12px;
-            VerticalLayout {
-                horizontal-stretch: 1;
-                spacing: 4px;
-                Text { text: root.name; font-size: 20px; font-weight: 800; }
-                Text { text: "ID " + product-id-hex; font-size: 11px; color: Palette.foreground.with-alpha(0.6); }
-            }
-            if has-battery: BatteryBadge { percent: battery-percent; charging: charging; }
-        }
+            Button { text: "← Devices"; horizontal-stretch: 0; clicked => { root.back(); } }
 
-        if !supported: Rectangle {
-            border-radius: 10px;
-            background: Palette.foreground.with-alpha(0.06);
-            VerticalLayout {
-                padding: 16px;
-                Text {
-                    text: "This device isn't supported yet.";
-                    wrap: word-wrap;
-                    color: Palette.foreground.with-alpha(0.7);
+            HorizontalLayout {
+                spacing: 12px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 4px;
+                    Text { text: root.name; font-size: 20px; font-weight: 800; }
+                    Text { text: "ID " + product-id-hex; font-size: 11px; color: Palette.foreground.with-alpha(0.6); }
                 }
+                if has-battery: BatteryBadge { percent: battery-percent; charging: charging; }
             }
-        }
 
-        if has-chatmix: Rectangle {
-            border-radius: 10px;
-            background: Palette.foreground.with-alpha(0.04);
-            VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
-                Text { text: "ChatMix"; font-weight: 700; font-size: 13px; }
-                Text {
-                    text: "Game " + chatmix-game-percent + "%  ·  Chat " + chatmix-chat-percent + "%";
-                    font-size: 12px;
-                    color: Palette.foreground.with-alpha(0.75);
+            if !supported: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.06);
+                VerticalLayout {
+                    padding: 16px;
+                    Text {
+                        text: "This device isn't supported yet.";
+                        wrap: word-wrap;
+                        color: Palette.foreground.with-alpha(0.7);
+                    }
                 }
             }
-        }
 
-        if supported && supports-dpi: Rectangle {
-            border-radius: 10px;
-            background: Palette.foreground.with-alpha(0.04);
-            VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
-                Text { text: "DPI presets"; font-weight: 700; font-size: 13px; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    LineEdit { text <=> root.dpi-input; placeholder-text: "400,800,1600"; horizontal-stretch: 1; }
-                    Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-dpi(root.dpi-input); } }
-                }
-                if dpi-help != "": Text { text: dpi-help; font-size: 11px; wrap: word-wrap; color: Palette.foreground.with-alpha(0.55); }
-                if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
-            }
-        }
-
-        if supported && supports-polling-rate: Rectangle {
-            border-radius: 10px;
-            background: Palette.foreground.with-alpha(0.04);
-            VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
-                Text { text: "Polling rate"; font-weight: 700; font-size: 13px; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    ComboBox {
-                        model: ["125 Hz", "250 Hz", "500 Hz", "1000 Hz"];
-                        current-index <=> root.polling-rate-index;
-                        horizontal-stretch: 1;
+            if has-chatmix: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "ChatMix"; font-weight: 700; font-size: 13px; }
+                    Text {
+                        text: "Game " + chatmix-game-percent + "%  ·  Chat " + chatmix-chat-percent + "%";
+                        font-size: 12px;
+                        color: Palette.foreground.with-alpha(0.75);
                     }
-                    Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-polling-rate(root.polling-rate-index); } }
                 }
             }
-        }
 
-        if supported && supports-button-mapping: Rectangle {
-            border-radius: 10px;
-            background: Palette.foreground.with-alpha(0.04);
-            VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
-                Text { text: "Button mapping"; font-weight: 700; font-size: 13px; }
-                Text { text: "Each row is one physical button on the mouse; pick what it should do."; font-size: 11px; wrap: word-wrap; color: Palette.foreground.with-alpha(0.55); }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Button 1 (Left-Click)"; vertical-alignment: center; width: 140px; }
-                    ComboBox {
-                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
-                        current-index <=> root.button-mapping-index-0;
-                        horizontal-stretch: 1;
+            if supported && supports-dpi: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "DPI presets"; font-weight: 700; font-size: 13px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        LineEdit { text <=> root.dpi-input; placeholder-text: "400,800,1600"; horizontal-stretch: 1; }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-dpi(root.dpi-input); } }
                     }
+                    if dpi-help != "": Text { text: dpi-help; font-size: 11px; wrap: word-wrap; color: Palette.foreground.with-alpha(0.55); }
+                    if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
                 }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Button 2 (Right-Click)"; vertical-alignment: center; width: 140px; }
-                    ComboBox {
-                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
-                        current-index <=> root.button-mapping-index-1;
-                        horizontal-stretch: 1;
-                    }
-                }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Button 3 (Middle-Click)"; vertical-alignment: center; width: 140px; }
-                    ComboBox {
-                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
-                        current-index <=> root.button-mapping-index-2;
-                        horizontal-stretch: 1;
-                    }
-                }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Button 4 (Forward)"; vertical-alignment: center; width: 140px; }
-                    ComboBox {
-                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
-                        current-index <=> root.button-mapping-index-3;
-                        horizontal-stretch: 1;
-                    }
-                }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Button 5 (Back)"; vertical-alignment: center; width: 140px; }
-                    ComboBox {
-                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
-                        current-index <=> root.button-mapping-index-4;
-                        horizontal-stretch: 1;
-                    }
-                }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Text { text: "Button 6 (DPI Button)"; vertical-alignment: center; width: 140px; }
-                    ComboBox {
-                        model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
-                        current-index <=> root.button-mapping-index-5;
-                        horizontal-stretch: 1;
-                    }
-                }
-                Button {
-                    text: "Apply";
-                    clicked => {
-                        root.apply-button-mapping([
-                            root.button-mapping-index-0,
-                            root.button-mapping-index-1,
-                            root.button-mapping-index-2,
-                            root.button-mapping-index-3,
-                            root.button-mapping-index-4,
-                            root.button-mapping-index-5,
-                        ]);
-                    }
-                }
-                if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
             }
-        }
 
-        if supported && !supports-dpi && !supports-polling-rate && !supports-button-mapping: Rectangle {
-            border-radius: 10px;
-            background: Palette.foreground.with-alpha(0.04);
-            VerticalLayout {
-                padding: 16px;
-                spacing: 6px;
-                Text { text: "No adjustable settings implemented yet for this device."; wrap: word-wrap; color: Palette.foreground.with-alpha(0.7); }
-                if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
+            if supported && supports-polling-rate: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "Polling rate"; font-weight: 700; font-size: 13px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        ComboBox {
+                            model: ["125 Hz", "250 Hz", "500 Hz", "1000 Hz"];
+                            current-index <=> root.polling-rate-index;
+                            horizontal-stretch: 1;
+                        }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-polling-rate(root.polling-rate-index); } }
+                    }
+                }
             }
-        }
 
-        Rectangle { vertical-stretch: 1; }
+            if supported && supports-button-mapping: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "Button mapping"; font-weight: 700; font-size: 13px; }
+                    Text { text: "Each row is one physical button on the mouse; pick what it should do."; font-size: 11px; wrap: word-wrap; color: Palette.foreground.with-alpha(0.55); }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Button 1 (Left-Click)"; vertical-alignment: center; width: 140px; }
+                        ComboBox {
+                            model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                            current-index <=> root.button-mapping-index-0;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Button 2 (Right-Click)"; vertical-alignment: center; width: 140px; }
+                        ComboBox {
+                            model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                            current-index <=> root.button-mapping-index-1;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Button 3 (Middle-Click)"; vertical-alignment: center; width: 140px; }
+                        ComboBox {
+                            model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                            current-index <=> root.button-mapping-index-2;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Button 4 (Forward)"; vertical-alignment: center; width: 140px; }
+                        ComboBox {
+                            model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                            current-index <=> root.button-mapping-index-3;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Button 5 (Back)"; vertical-alignment: center; width: 140px; }
+                        ComboBox {
+                            model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                            current-index <=> root.button-mapping-index-4;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Button 6 (DPI Button)"; vertical-alignment: center; width: 140px; }
+                        ComboBox {
+                            model: ["Disabled", "DPI Switch", "Scroll Up", "Scroll Down", "Default", "Button 1", "Button 2", "Button 3", "Button 4", "Button 5", "Button 6"];
+                            current-index <=> root.button-mapping-index-5;
+                            horizontal-stretch: 1;
+                        }
+                    }
+                    Button {
+                        text: "Apply";
+                        clicked => {
+                            root.apply-button-mapping([
+                                root.button-mapping-index-0,
+                                root.button-mapping-index-1,
+                                root.button-mapping-index-2,
+                                root.button-mapping-index-3,
+                                root.button-mapping-index-4,
+                                root.button-mapping-index-5,
+                            ]);
+                        }
+                    }
+                    if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
+                }
+            }
+
+            if supported && !supports-dpi && !supports-polling-rate && !supports-button-mapping: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 6px;
+                    Text { text: "No adjustable settings implemented yet for this device."; wrap: word-wrap; color: Palette.foreground.with-alpha(0.7); }
+                    if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+        }
     }
 }
 
@@ -476,84 +480,89 @@ component SettingsPage inherits Rectangle {
     callback set-notification-sound(int);
     callback preview-sound(int);
 
-    VerticalLayout {
-        padding: 24px;
-        spacing: 16px;
+    ScrollView {
+        vertical-stretch: 1;
 
-        Text { text: "Settings"; font-size: 22px; font-weight: 800; }
+        VerticalLayout {
+            padding: 24px;
+            spacing: 16px;
 
-        Rectangle { height: 1px; background: Palette.foreground.with-alpha(0.08); }
+            Text { text: "Settings"; font-size: 22px; font-weight: 800; }
 
-        Rectangle {
-            border-radius: 10px;
-            background: Palette.foreground.with-alpha(0.04);
-            VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
-                Text { text: "Battery check interval"; font-weight: 700; font-size: 13px; }
-                Text {
-                    text: "How often the system tray re-checks connected devices' battery levels.";
-                    font-size: 11px;
-                    wrap: word-wrap;
-                    color: Palette.foreground.with-alpha(0.6);
-                }
-                HorizontalLayout {
-                    spacing: 8px;
-                    SpinBox {
-                        minimum: 1;
-                        maximum: 120;
-                        value <=> root.poll-interval-minutes;
-                        horizontal-stretch: 1;
+            Rectangle { height: 1px; background: Palette.foreground.with-alpha(0.08); }
+
+            Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "Battery check interval"; font-weight: 700; font-size: 13px; }
+                    Text {
+                        text: "How often the system tray re-checks connected devices' battery levels.";
+                        font-size: 11px;
+                        wrap: word-wrap;
+                        color: Palette.foreground.with-alpha(0.6);
                     }
-                    Text { text: "minutes"; vertical-alignment: center; color: Palette.foreground.with-alpha(0.6); }
-                    Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.save-poll-interval(root.poll-interval-minutes); } }
-                }
-            }
-        }
-
-        Rectangle {
-            border-radius: 10px;
-            background: Palette.foreground.with-alpha(0.04);
-            VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
-                Text { text: "Tray icon"; font-weight: 700; font-size: 13px; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Button { text: "Colored"; clicked => { root.set-tray-icon-monochrome(false); } }
-                    Button { text: "Monochrome"; clicked => { root.set-tray-icon-monochrome(true); } }
-                }
-            }
-        }
-
-        Rectangle {
-            border-radius: 10px;
-            background: Palette.foreground.with-alpha(0.04);
-            VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
-                Text { text: "Low-battery notification"; font-weight: 700; font-size: 13px; }
-                HorizontalLayout {
-                    spacing: 8px;
-                    Button {
-                        text: root.notification-persistent ? "Stays until dismissed" : "Auto-dismisses";
-                        clicked => { root.set-notification-persistent(!root.notification-persistent); }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        SpinBox {
+                            minimum: 1;
+                            maximum: 120;
+                            value <=> root.poll-interval-minutes;
+                            horizontal-stretch: 1;
+                        }
+                        Text { text: "minutes"; vertical-alignment: center; color: Palette.foreground.with-alpha(0.6); }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.save-poll-interval(root.poll-interval-minutes); } }
                     }
                 }
-                HorizontalLayout {
-                    spacing: 8px;
-                    ComboBox {
-                        model: ["Default sound", "Silent", "Dialog warning", "Message"];
-                        current-index <=> root.notification-sound-index;
-                        selected(value) => { root.set-notification-sound(root.notification-sound-index); }
-                        horizontal-stretch: 1;
+            }
+
+            Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "Tray icon"; font-weight: 700; font-size: 13px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Button { text: "Colored"; clicked => { root.set-tray-icon-monochrome(false); } }
+                        Button { text: "Monochrome"; clicked => { root.set-tray-icon-monochrome(true); } }
                     }
-                    Button { text: "▶ Preview"; horizontal-stretch: 0; clicked => { root.preview-sound(root.notification-sound-index); } }
                 }
             }
-        }
 
-        Rectangle { vertical-stretch: 1; }
+            Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "Low-battery notification"; font-weight: 700; font-size: 13px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        CheckBox {
+                            text: "Keep until manually dismissed";
+                            checked: root.notification-persistent;
+                            toggled => { root.set-notification-persistent(self.checked); }
+                        }
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        ComboBox {
+                            model: ["Default sound", "Silent", "Dialog warning", "Message"];
+                            current-index <=> root.notification-sound-index;
+                            selected(value) => { root.set-notification-sound(root.notification-sound-index); }
+                            horizontal-stretch: 1;
+                        }
+                        Button { text: "▶ Preview"; horizontal-stretch: 0; clicked => { root.preview-sound(root.notification-sound-index); } }
+                    }
+                }
+            }
+
+            Rectangle { vertical-stretch: 1; }
+        }
     }
 }
 
@@ -699,23 +708,24 @@ export component MainWindow inherits Window {
     }
 
     if root.settings-status != "": Rectangle {
+        width: 280px;
+        height: 56px;
+        clip: true;
         x: root.width - self.width - 16px;
         y: root.height - self.height - 16px;
-        border-radius: 10px;
+        border-radius: 8px;
         background: root.settings-status-color.with-alpha(0.15);
         border-width: 1px;
         border-color: root.settings-status-color.with-alpha(0.4);
-        HorizontalLayout {
-            padding-left: 14px;
-            padding-right: 14px;
-            padding-top: 10px;
-            padding-bottom: 10px;
-            Text {
-                text: root.settings-status;
-                color: root.settings-status-color;
-                font-size: 12px;
-                font-weight: 600;
-            }
+        Text {
+            x: 10px;
+            y: 6px;
+            width: 260px;
+            text: root.settings-status;
+            color: root.settings-status-color;
+            font-size: 11px;
+            font-weight: 500;
+            wrap: word-wrap;
         }
     }
 
