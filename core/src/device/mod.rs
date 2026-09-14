@@ -52,6 +52,13 @@ pub trait WirelessDevice {
     fn battery_status(&self) -> Result<crate::protocol::BatteryStatus>;
 }
 
+/// Reads a headset's ChatMix (game/chat volume balance) dial position.
+/// Deliberately not part of `WirelessDevice`/`battery_status`: chatmix must
+/// stay readable even when the headset itself reports offline, unlike battery.
+pub trait ChatMixReadable {
+    fn chatmix_status(&self) -> Result<crate::protocol::ChatMixStatus>;
+}
+
 /// Common interface for devices with configurable button mapping
 pub trait ConfigurableButtons {
     /// Set button mapping

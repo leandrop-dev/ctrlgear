@@ -101,6 +101,15 @@ impl BatteryStatus {
     }
 }
 
+/// ChatMix (game/chat volume balance) dial position for wireless headsets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChatMixStatus {
+    /// Game volume (0-100)
+    pub game_percent: u8,
+    /// Chat volume (0-100)
+    pub chat_percent: u8,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

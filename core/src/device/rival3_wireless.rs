@@ -82,6 +82,7 @@ pub const RIVAL3_WIRELESS_PROFILE: DeviceProfile = DeviceProfile {
         readback_length: 3,
         parse: parse_battery,
     }),
+    chatmix: None,
     dpi: Some(DpiProfile {
         command: commands::SENSITIVITY,
         mapping: DPI_MAPPING,

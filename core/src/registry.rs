@@ -11,9 +11,9 @@ use crate::device::arctis_nova_7::{
 };
 use crate::device::profile::{DeviceProfile, ProfiledDevice};
 use crate::device::rival3_wireless::{RIVAL3_WIRELESS_PROFILE, PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID};
-use crate::device::{ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice, WirelessDevice};
+use crate::device::{ChatMixReadable, ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice, WirelessDevice};
 use crate::hid::SteelSeriesHid;
-use crate::protocol::{BatteryStatus, STEELSERIES_VENDOR_ID};
+use crate::protocol::{BatteryStatus, ChatMixStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
 use hidapi::HidApi;
 
@@ -55,6 +55,10 @@ impl Device {
         self.inner.battery_status()
     }
 
+    pub fn chatmix_status(&self) -> Result<ChatMixStatus> {
+        self.inner.chatmix_status()
+    }
+
     /// Whether this device has a configurable DPI (mice only).
     pub fn supports_dpi(&self) -> bool {
         self.inner.profile().dpi.is_some()
@@ -68,6 +72,11 @@ impl Device {
     /// Whether this device has configurable button mapping (mice only).
     pub fn supports_button_mapping(&self) -> bool {
         self.inner.profile().buttons.is_some()
+    }
+
+    /// Whether this device has a readable chatmix (headsets only).
+    pub fn supports_chatmix(&self) -> bool {
+        self.inner.profile().chatmix.is_some()
     }
 
     /// Valid DPI range as (min, max, step), for devices with configurable DPI.
@@ -152,6 +161,7 @@ pub fn open(api: &HidApi, product_id: u16) -> Result<Device> {
 
 /// A connected SteelSeries device, with battery status already queried for
 /// devices that support it. Meant for populating a device list/grid UI.
+#[derive(Clone)]
 pub struct DeviceSummary {
     pub product_id: u16,
     pub name: String,
@@ -162,6 +172,7 @@ pub struct DeviceSummary {
     pub dpi_range: Option<(u16, u16, u16)>,
     pub connection_type: ConnectionType,
     pub battery: Option<BatteryStatus>,
+    pub chatmix: Option<ChatMixStatus>,
     /// Set when the device is supported but a query (e.g. battery) failed,
     /// or left as the raw HID product string for unsupported devices.
     pub note: Option<String>,
@@ -196,6 +207,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     dpi_range: None,
                     connection_type,
                     battery: None,
+                    chatmix: None,
                     note: None,
                 };
             }
@@ -207,6 +219,9 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     let supports_polling_rate = device.supports_polling_rate();
                     let supports_button_mapping = device.supports_button_mapping();
                     let dpi_range = device.dpi_range();
+                    let supports_chatmix = device.supports_chatmix();
+                    let chatmix_result = supports_chatmix.then(|| device.chatmix_status());
+                    let chatmix = chatmix_result.as_ref().and_then(|r| r.as_ref().ok()).copied();
                     match device.battery_status() {
                         Ok(status) => DeviceSummary {
                             product_id,
@@ -218,7 +233,12 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             dpi_range,
                             connection_type,
                             battery: Some(status),
-                            note: None,
+                            chatmix,
+                            // Battery succeeded, so surface a chatmix failure here instead
+                            // of dropping it silently — there's nothing more important to
+                            // report in this arm. When battery also fails (the other arm),
+                            // its error takes priority and the chatmix error is dropped.
+                            note: chatmix_result.and_then(|r| r.err()).map(|e| e.to_string()),
                         },
                         Err(e) => DeviceSummary {
                             product_id,
@@ -230,6 +250,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             dpi_range,
                             connection_type,
                             battery: None,
+                            chatmix,
                             note: Some(e.to_string()),
                         },
                     }
@@ -247,6 +268,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     dpi_range: None,
                     connection_type,
                     battery: None,
+                    chatmix: None,
                     note: Some(e.to_string()),
                 },
             }
@@ -321,8 +343,9 @@ mod tests {
     }
 
     #[test]
-    fn arctis_nova_7_profile_is_battery_only() {
+    fn arctis_nova_7_profile_declares_battery_and_chatmix_only() {
         assert!(ARCTIS_NOVA_7_PROFILE.battery.is_some());
+        assert!(ARCTIS_NOVA_7_PROFILE.chatmix.is_some());
         assert!(ARCTIS_NOVA_7_PROFILE.dpi.is_none());
         assert!(ARCTIS_NOVA_7_PROFILE.polling_rate.is_none());
         assert!(ARCTIS_NOVA_7_PROFILE.buttons.is_none());

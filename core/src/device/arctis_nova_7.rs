@@ -1,7 +1,8 @@
 //! SteelSeries Arctis Nova 7 Wireless headset profile data.
 //!
-//! Battery-only: this headset has no DPI/polling-rate/button concepts, so
-//! its [`DeviceProfile`] leaves those fields `None` —
+//! Battery and chatmix (game/chat volume balance) only: this headset has no
+//! DPI/polling-rate/button concepts, so its [`DeviceProfile`] leaves those
+//! fields `None` —
 //! [`crate::device::profile::ProfiledDevice`] returns [`Error::Unsupported`]
 //! for them generically.
 //!
@@ -16,8 +17,8 @@
 //! discrete 0-4 level requiring a different mapping to percent — out of
 //! scope until that variant needs support.
 
-use crate::device::profile::{BatteryProfile, DeviceProfile};
-use crate::protocol::{BatteryStatus, STEELSERIES_VENDOR_ID};
+use crate::device::profile::{BatteryProfile, ChatMixProfile, DeviceProfile};
+use crate::protocol::{BatteryStatus, ChatMixStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
 
 /// Product ID for Arctis Nova 7 Wireless (percentage-battery firmware),
@@ -71,8 +72,27 @@ fn parse_status(response: &[u8]) -> Result<BatteryStatus> {
     })
 }
 
-/// SteelSeries Arctis Nova 7 device profile. Battery-only: `dpi`,
-/// `polling_rate` and `buttons` all come from `DeviceProfile::NONE`.
+/// Parses chatmix (game/chat volume balance) from the same status report
+/// `parse_status` reads. Deliberately performs its own HID round-trip
+/// against the identical 0xb0 command as battery_status, rather than
+/// sharing one read — see `ChatMixProfile`'s doc comment for why. Unlike
+/// `parse_status`, this must NOT gate on the offline sentinel (response[3]):
+/// chatmix stays valid even when the headset itself reports offline.
+fn parse_chatmix(response: &[u8]) -> Result<ChatMixStatus> {
+    if response.len() < 6 {
+        return Err(Error::InvalidParameter(
+            "Invalid chatmix status response".to_string(),
+        ));
+    }
+
+    Ok(ChatMixStatus {
+        game_percent: response[4].min(100),
+        chat_percent: response[5].min(100),
+    })
+}
+
+/// SteelSeries Arctis Nova 7 device profile. Battery and chatmix only:
+/// `dpi`, `polling_rate` and `buttons` all come from `DeviceProfile::NONE`.
 pub const ARCTIS_NOVA_7_PROFILE: DeviceProfile = DeviceProfile {
     name: "SteelSeries Arctis Nova 7",
     vendor_id: STEELSERIES_VENDOR_ID,
@@ -84,5 +104,40 @@ pub const ARCTIS_NOVA_7_PROFILE: DeviceProfile = DeviceProfile {
         readback_length: STATUS_RESPONSE_BUF_LEN,
         parse: parse_status,
     }),
+    chatmix: Some(ChatMixProfile {
+        command: STATUS_REQUEST,
+        extra_byte: None,
+        readback_length: STATUS_RESPONSE_BUF_LEN,
+        parse: parse_chatmix,
+    }),
     ..DeviceProfile::NONE
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_chatmix_reads_game_and_chat_percent_even_when_offline() {
+        // Byte 3 (0x00) is the offline sentinel `parse_status` rejects on —
+        // this fixture proves `parse_chatmix` ignores it and still parses.
+        let response = [0xb0, 0x00, 75, 0x00, 60, 40];
+        let status = parse_chatmix(&response).unwrap();
+        assert_eq!(status.game_percent, 60);
+        assert_eq!(status.chat_percent, 40);
+    }
+
+    #[test]
+    fn parse_chatmix_errors_on_short_response() {
+        let response = [0xb0, 0x00, 75, 0x00, 60];
+        assert!(parse_chatmix(&response).is_err());
+    }
+
+    #[test]
+    fn parse_chatmix_clamps_percent_to_100() {
+        let response = [0xb0, 0x00, 75, 0x00, 200, 150];
+        let status = parse_chatmix(&response).unwrap();
+        assert_eq!(status.game_percent, 100);
+        assert_eq!(status.chat_percent, 100);
+    }
+}

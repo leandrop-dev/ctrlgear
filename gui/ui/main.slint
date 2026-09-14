@@ -271,6 +271,9 @@ component DeviceDetailPage inherits Rectangle {
     in property <bool> has-battery;
     in property <int> battery-percent;
     in property <bool> charging;
+    in property <bool> has-chatmix;
+    in property <int> chatmix-game-percent;
+    in property <int> chatmix-chat-percent;
     in property <string> status;
     in property <color> status-color: Palette.foreground;
     in-out property <string> dpi-input;
@@ -313,6 +316,21 @@ component DeviceDetailPage inherits Rectangle {
                     text: "This device isn't supported yet.";
                     wrap: word-wrap;
                     color: Palette.foreground.with-alpha(0.7);
+                }
+            }
+        }
+
+        if has-chatmix: Rectangle {
+            border-radius: 10px;
+            background: Palette.foreground.with-alpha(0.04);
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+                Text { text: "ChatMix"; font-weight: 700; font-size: 13px; }
+                Text {
+                    text: "Game " + chatmix-game-percent + "%  ·  Chat " + chatmix-chat-percent + "%";
+                    font-size: 12px;
+                    color: Palette.foreground.with-alpha(0.75);
                 }
             }
         }
@@ -590,6 +608,9 @@ export component MainWindow inherits Window {
     in property <bool> detail-has-battery: false;
     in property <int> detail-battery-percent: 0;
     in property <bool> detail-charging: false;
+    in property <bool> detail-has-chatmix: false;
+    in property <int> detail-chatmix-game-percent: 0;
+    in property <int> detail-chatmix-chat-percent: 0;
     in property <string> detail-status: "";
     in property <color> detail-status-color: Palette.foreground;
     in property <string> detail-dpi-help: "";
@@ -655,6 +676,9 @@ export component MainWindow inherits Window {
                 has-battery: root.detail-has-battery;
                 battery-percent: root.detail-battery-percent;
                 charging: root.detail-charging;
+                has-chatmix: root.detail-has-chatmix;
+                chatmix-game-percent: root.detail-chatmix-game-percent;
+                chatmix-chat-percent: root.detail-chatmix-chat-percent;
                 status: root.detail-status;
                 status-color: root.detail-status-color;
                 dpi-help: root.detail-dpi-help;

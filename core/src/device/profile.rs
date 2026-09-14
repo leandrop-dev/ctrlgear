@@ -11,11 +11,11 @@
 
 use crate::buttons::ButtonMapping;
 use crate::device::{
-    ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice,
-    WirelessDevice,
+    ChatMixReadable, ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate,
+    SteelSeriesDevice, WirelessDevice,
 };
 use crate::hid::SteelSeriesHid;
-use crate::protocol::{self, BatteryStatus, PollingRate, ReportType};
+use crate::protocol::{self, BatteryStatus, ChatMixStatus, PollingRate, ReportType};
 use crate::{Error, Result};
 
 /// Data needed to query battery/status: which command to send and how to
@@ -36,6 +36,19 @@ pub struct BatteryProfile {
     pub readback_length: usize,
     /// Parses the raw readback into a [`BatteryStatus`].
     pub parse: fn(&[u8]) -> Result<BatteryStatus>,
+}
+
+/// Data needed to read chatmix: kept as its own struct rather than folded
+/// into `BatteryProfile`, even though on the Arctis Nova 7 both share the
+/// identical 0xb0 command/response — their offline-handling semantics
+/// differ (chatmix must stay readable offline, battery must not), and a
+/// future device could have one capability without the other.
+#[derive(Clone, Copy)]
+pub struct ChatMixProfile {
+    pub command: u8,
+    pub extra_byte: Option<u8>,
+    pub readback_length: usize,
+    pub parse: fn(&[u8]) -> Result<ChatMixStatus>,
 }
 
 /// Data needed to set DPI: the command byte, the DPI-value -> device-byte
@@ -75,6 +88,7 @@ pub struct DeviceProfile {
     /// `usage_page` alone doesn't disambiguate it.
     pub interface: Option<u8>,
     pub battery: Option<BatteryProfile>,
+    pub chatmix: Option<ChatMixProfile>,
     pub dpi: Option<DpiProfile>,
     pub polling_rate: Option<PollingRateProfile>,
     pub buttons: Option<ButtonsProfile>,
@@ -94,6 +108,7 @@ impl DeviceProfile {
         usage_page: 0,
         interface: None,
         battery: None,
+        chatmix: None,
         dpi: None,
         polling_rate: None,
         buttons: None,
@@ -258,22 +273,45 @@ impl ConfigurablePollingRate for ProfiledDevice {
     }
 }
 
+impl ProfiledDevice {
+    /// Sends `[command]` (plus `extra_byte`, if any), reads back
+    /// `readback_length` bytes, and hands the response to `parse`. Shared by
+    /// every capability whose HID shape is "one command byte, one optional
+    /// extra byte, one readback, one parse function" — currently
+    /// `battery_status` and `chatmix_status`, which happen to target the
+    /// identical physical report on the Arctis Nova 7 but are still issued
+    /// as separate round-trips (see `ChatMixProfile`'s doc comment for why).
+    fn query_report<T>(
+        &self,
+        command: u8,
+        extra_byte: Option<u8>,
+        readback_length: usize,
+        parse: fn(&[u8]) -> Result<T>,
+    ) -> Result<T> {
+        let mut cmd = vec![command];
+        if let Some(extra) = extra_byte {
+            cmd.push(extra);
+        }
+
+        let response = self
+            .hid
+            .write_command(ReportType::Output, &cmd, Some(readback_length))?;
+
+        parse(&response)
+    }
+}
+
 impl WirelessDevice for ProfiledDevice {
     fn battery_status(&self) -> Result<BatteryStatus> {
         let battery = require_capability!(self, battery, "battery status");
+        self.query_report(battery.command, battery.extra_byte, battery.readback_length, battery.parse)
+    }
+}
 
-        let mut command = vec![battery.command];
-        if let Some(extra) = battery.extra_byte {
-            command.push(extra);
-        }
-
-        let response = self.hid.write_command(
-            ReportType::Output,
-            &command,
-            Some(battery.readback_length),
-        )?;
-
-        (battery.parse)(&response)
+impl ChatMixReadable for ProfiledDevice {
+    fn chatmix_status(&self) -> Result<ChatMixStatus> {
+        let chatmix = require_capability!(self, chatmix, "chatmix status");
+        self.query_report(chatmix.command, chatmix.extra_byte, chatmix.readback_length, chatmix.parse)
     }
 }
 
@@ -359,6 +397,7 @@ mod tests {
             usage_page: 0xffc0,
             interface: None,
             battery: None,
+            chatmix: None,
             dpi: Some(DpiProfile {
                 command: 0x99,
                 mapping: TEST_MAPPING,
@@ -385,6 +424,7 @@ mod tests {
             usage_page: 0xffc0,
             interface: None,
             battery: None,
+            chatmix: None,
             dpi: None,
             polling_rate: None,
             buttons: None,
