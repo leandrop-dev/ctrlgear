@@ -150,6 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let summaries = summaries.clone();
         let battery_state = battery_state.clone();
         let settings_cell = settings_cell.clone();
+        let selected_product_id = selected_product_id.clone();
         window.unwrap().on_refresh(move || {
             let window = window.unwrap();
             window.set_loading(true);
@@ -157,6 +158,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window.set_devices(to_card_model(&discovered));
             tray.unwrap().set_device_labels(device_labels(&discovered));
             check_low_battery(&discovered, &mut battery_state.borrow_mut(), &settings_cell.borrow());
+            refresh_detail_if_showing(&window, *selected_product_id.borrow(), &discovered);
             *summaries.borrow_mut() = discovered;
             window.set_loading(false);
         });
@@ -174,18 +176,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             *selected_product_id.borrow_mut() = Some(summary.product_id);
-            window.set_detail_name(display_name(&summary.name).into());
-            window.set_detail_product_id_hex(format!("0x{:04x}", summary.product_id).into());
-            window.set_detail_supported(summary.supported);
-            window.set_detail_supports_dpi(summary.supports_dpi);
-            window.set_detail_supports_polling_rate(summary.supports_polling_rate);
-            window.set_detail_supports_button_mapping(summary.supports_button_mapping);
-            window.set_detail_dpi_help(dpi_help_text(summary.dpi_range).into());
-            window.set_detail_has_battery(summary.battery.is_some());
-            window.set_detail_battery_percent(summary.battery.map(|b| b.level).unwrap_or(0) as i32);
-            window.set_detail_charging(summary.battery.map(|b| b.is_charging).unwrap_or(false));
-            window.set_detail_status(summary.note.clone().unwrap_or_default().into());
-            window.set_detail_status_color(STATUS_COLOR_ERROR);
+            apply_detail_summary(&window, summary);
             window.set_dpi_input("400,800,1600".into());
             window.set_polling_rate_index(3);
             window.set_button_mapping_index_0(4);
@@ -282,7 +273,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let window = window.as_weak();
         tray.on_show_window(move || {
-            window.unwrap().show().unwrap();
+            let window = window.unwrap();
+            window.show().unwrap();
+            window.invoke_refresh();
         });
     }
     tray.on_quit(|| {
@@ -295,6 +288,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let summaries = summaries.clone();
         let battery_state = battery_state.clone();
         let settings_cell = settings_cell.clone();
+        let selected_product_id = selected_product_id.clone();
         let interval_secs = window.unwrap().get_poll_interval_minutes() as u64 * 60;
         poll_timer.start(slint::TimerMode::Repeated, Duration::from_secs(interval_secs), move || {
             let window = window.unwrap();
@@ -303,6 +297,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window.set_devices(to_card_model(&discovered));
             tray.set_device_labels(device_labels(&discovered));
             check_low_battery(&discovered, &mut battery_state.borrow_mut(), &settings_cell.borrow());
+            refresh_detail_if_showing(&window, *selected_product_id.borrow(), &discovered);
             *summaries.borrow_mut() = discovered;
         });
     }
@@ -345,6 +340,49 @@ fn dpi_help_text(range: Option<(u16, u16, u16)>) -> String {
             format!("Supports {min}\u{2013}{max} DPI in steps of {step}, up to 5 presets.")
         }
         None => String::new(),
+    }
+}
+
+/// Applies a device summary to the detail page's fields. The single place
+/// that knows which window properties constitute "the detail view" —
+/// called from device selection AND from both refresh paths (manual and
+/// periodic), so a field added to one path can't silently go missing from
+/// the others (this already happened once, with the chatmix fields).
+fn apply_detail_summary(window: &MainWindow, summary: &DeviceSummary) {
+    window.set_detail_name(display_name(&summary.name).into());
+    window.set_detail_product_id_hex(format!("0x{:04x}", summary.product_id).into());
+    window.set_detail_supported(summary.supported);
+    window.set_detail_supports_dpi(summary.supports_dpi);
+    window.set_detail_supports_polling_rate(summary.supports_polling_rate);
+    window.set_detail_supports_button_mapping(summary.supports_button_mapping);
+    window.set_detail_dpi_help(dpi_help_text(summary.dpi_range).into());
+    window.set_detail_has_battery(summary.battery.is_some());
+    window.set_detail_battery_percent(summary.battery.map(|b| b.level).unwrap_or(0) as i32);
+    window.set_detail_charging(summary.battery.map(|b| b.is_charging).unwrap_or(false));
+    window.set_detail_has_chatmix(summary.chatmix.is_some());
+    window.set_detail_chatmix_game_percent(summary.chatmix.map(|c| c.game_percent).unwrap_or(0) as i32);
+    window.set_detail_chatmix_chat_percent(summary.chatmix.map(|c| c.chat_percent).unwrap_or(0) as i32);
+    window.set_detail_status(summary.note.clone().unwrap_or_default().into());
+    window.set_detail_status_color(STATUS_COLOR_ERROR);
+}
+
+/// Finds the current summary for the selected device in a fresh discover()
+/// result, or `None` if nothing is selected or the device dropped out of
+/// this discovery (e.g. unplugged) — callers must leave the detail page
+/// untouched in that case, not blank it.
+fn find_selected_summary(selected: Option<u16>, discovered: &[DeviceSummary]) -> Option<DeviceSummary> {
+    let product_id = selected?;
+    discovered.iter().find(|d| d.product_id == product_id).cloned()
+}
+
+/// If the detail page is open, re-applies the selected device's current
+/// summary to it. Called from both refresh paths (manual and periodic) so
+/// they can't silently drift on when/how the detail page gets refreshed.
+fn refresh_detail_if_showing(window: &MainWindow, selected: Option<u16>, discovered: &[DeviceSummary]) {
+    if window.get_showing_detail() {
+        if let Some(summary) = find_selected_summary(selected, discovered) {
+            apply_detail_summary(window, &summary);
+        }
     }
 }
 
@@ -515,6 +553,7 @@ mod tests {
             dpi_range: None,
             connection_type: ConnectionType::Unknown,
             battery,
+            chatmix: None,
             note: None,
         }
     }
@@ -592,6 +631,7 @@ mod tests {
             dpi_range: None,
             connection_type: ConnectionType::Unknown,
             battery,
+            chatmix: None,
             note: None,
         }
     }
@@ -660,6 +700,25 @@ mod tests {
 
         assert!(states.get(&1).unwrap().notified);
         assert_eq!(drop_transitions, vec![("Test Device".to_string(), 20)]);
+    }
+
+    #[test]
+    fn find_selected_summary_returns_matching_summary() {
+        let discovered = vec![device_with_id(1, Some(BatteryStatus { level: 42, is_charging: false }))];
+        let result = find_selected_summary(Some(1), &discovered);
+        assert_eq!(result.map(|d| d.product_id), Some(1));
+    }
+
+    #[test]
+    fn find_selected_summary_returns_none_when_nothing_selected() {
+        let discovered = vec![device_with_id(1, None)];
+        assert!(find_selected_summary(None, &discovered).is_none());
+    }
+
+    #[test]
+    fn find_selected_summary_returns_none_when_selected_device_not_present() {
+        let discovered = vec![device_with_id(2, None)];
+        assert!(find_selected_summary(Some(1), &discovered).is_none());
     }
 }
 
