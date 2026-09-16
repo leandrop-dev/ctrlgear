@@ -527,6 +527,107 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     {
         let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_rgb_zone_color(move |zone, color| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_rgb_zone_color(product_id, zone, &color) {
+                Ok(()) => {
+                    window.set_detail_status(format!("Zone {zone} color applied.").into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_rgb_brightness(move |level| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_rgb_brightness(product_id, level) {
+                Ok(()) => {
+                    window.set_detail_status("LED brightness applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_rgb_rainbow(move |enabled| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            // rivalcfg's rainbow_effect has no "off" choice — per aerox3.py's
+            // comment, the rainbow effect "can be cleared by setting a
+            // color" instead. So unchecking the toggle has nothing to send;
+            // only the checked (enable, choosing "all" zones) side maps to
+            // an actual command.
+            if !enabled {
+                window.set_detail_status(
+                    "Rainbow has no direct \"off\" command — set a zone color or default lighting to turn it off on the device.".into(),
+                );
+                window.set_detail_status_color(STATUS_COLOR_OK);
+                return;
+            }
+
+            match apply_rgb_rainbow(product_id, "all") {
+                Ok(()) => {
+                    window.set_detail_status("Rainbow effect applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_rgb_default_lighting(move |index| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_rgb_default_lighting(product_id, index) {
+                Ok(()) => {
+                    window.set_detail_status("Default lighting applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
         window.unwrap().window().on_close_requested(move || {
             window.unwrap().hide().unwrap();
             slint::CloseRequestResponse::HideWindow
@@ -637,6 +738,15 @@ fn apply_detail_summary(window: &MainWindow, summary: &DeviceSummary) {
     window.set_detail_supports_sleep_timer(summary.supports_sleep_timer);
     window.set_detail_supports_volume_limiter(summary.supports_volume_limiter);
     window.set_detail_supports_bluetooth_settings(summary.supports_bluetooth_settings);
+    window.set_detail_supports_rgb(summary.supports_rgb);
+    window.set_detail_rgb_zone_count(summary.rgb_zone_count as i32);
+    window.set_detail_supports_rgb_brightness(summary.supports_rgb_brightness);
+    window.set_detail_supports_rgb_rainbow(summary.supports_rgb_rainbow);
+    let rgb_default_lighting_choices: Vec<slint::SharedString> =
+        summary.rgb_default_lighting_choices.iter().cloned().map(Into::into).collect();
+    window.set_detail_rgb_default_lighting_choices(slint::ModelRc::from(
+        rgb_default_lighting_choices.as_slice(),
+    ));
     window.set_detail_dpi_help(dpi_help_text(summary.dpi_range).into());
     window.set_detail_has_battery(summary.battery.is_some());
     window.set_detail_battery_percent(summary.battery.map(|b| b.level).unwrap_or(0) as i32);
@@ -839,6 +949,11 @@ mod tests {
             supports_sleep_timer: false,
             supports_volume_limiter: false,
             supports_bluetooth_settings: false,
+            supports_rgb: false,
+            rgb_zone_count: 0,
+            supports_rgb_brightness: false,
+            supports_rgb_rainbow: false,
+            rgb_default_lighting_choices: Vec::new(),
             dpi_range: None,
             connection_type: ConnectionType::Unknown,
             battery,
@@ -924,6 +1039,11 @@ mod tests {
             supports_sleep_timer: false,
             supports_volume_limiter: false,
             supports_bluetooth_settings: false,
+            supports_rgb: false,
+            rgb_zone_count: 0,
+            supports_rgb_brightness: false,
+            supports_rgb_rainbow: false,
+            rgb_default_lighting_choices: Vec::new(),
             dpi_range: None,
             connection_type: ConnectionType::Unknown,
             battery,
@@ -1015,6 +1135,32 @@ mod tests {
     fn find_selected_summary_returns_none_when_selected_device_not_present() {
         let discovered = vec![device_with_id(2, None)];
         assert!(find_selected_summary(Some(1), &discovered).is_none());
+    }
+
+    #[test]
+    fn parse_hex_color_parses_valid_input() {
+        assert_eq!(parse_hex_color("#ff00aa").unwrap(), (0xff, 0x00, 0xaa));
+        assert_eq!(parse_hex_color("00FF00").unwrap(), (0x00, 0xff, 0x00));
+    }
+
+    #[test]
+    fn parse_hex_color_rejects_wrong_length() {
+        assert!(parse_hex_color("#fff").is_err());
+        assert!(parse_hex_color("#ff00aabb").is_err());
+    }
+
+    #[test]
+    fn parse_hex_color_rejects_non_hex_ascii() {
+        assert!(parse_hex_color("zzzzzz").is_err());
+    }
+
+    #[test]
+    fn parse_hex_color_rejects_non_ascii_without_panicking() {
+        // "aµcde" is 6 bytes (a=1, µ=2, c/d/e=1 each) but only 5 chars, so a
+        // byte-index slice like &hex[4..6] would land mid-character and
+        // panic with "byte index N is not a char boundary" if the length
+        // check used byte length without an ASCII/hex-digit guard.
+        assert!(parse_hex_color("aµcde").is_err());
     }
 }
 
@@ -1185,4 +1331,48 @@ fn apply_button_mapping(product_id: u16, indices: &slint::ModelRc<i32>) -> ctrlg
     let api = hidapi::HidApi::new()?;
     let device = registry::open(&api, product_id)?;
     device.set_button_mapping(&mapping)
+}
+
+/// Parses a `#rrggbb` (or bare `rrggbb`) hex color string, as typed into
+/// the RGB zone-color `LineEdit`s in `gui/ui/main.slint`.
+fn parse_hex_color(s: &str) -> ctrlgear_core::Result<(u8, u8, u8)> {
+    let hex = s.trim().trim_start_matches('#');
+    let invalid = || Error::InvalidParameter(format!("Invalid color: {}", s));
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(invalid());
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).map_err(|_| invalid())?;
+    let g = u8::from_str_radix(&hex[2..4], 16).map_err(|_| invalid())?;
+    let b = u8::from_str_radix(&hex[4..6], 16).map_err(|_| invalid())?;
+    Ok((r, g, b))
+}
+
+fn apply_rgb_zone_color(product_id: u16, zone: i32, color: &str) -> ctrlgear_core::Result<()> {
+    let (r, g, b) = parse_hex_color(color)?;
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_rgb_zone_color(zone as u8, r, g, b)
+}
+
+fn apply_rgb_brightness(product_id: u16, level: f32) -> ctrlgear_core::Result<()> {
+    let level = level.round().clamp(0.0, 100.0) as u8;
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_rgb_brightness(level)
+}
+
+fn apply_rgb_rainbow(product_id: u16, choice: &str) -> ctrlgear_core::Result<()> {
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_rgb_rainbow_effect(choice)
+}
+
+fn apply_rgb_default_lighting(product_id: u16, index: i32) -> ctrlgear_core::Result<()> {
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    let choices = device.rgb_default_lighting_choices();
+    let (name, _) = choices
+        .get(index as usize)
+        .ok_or_else(|| Error::InvalidParameter(format!("Invalid default lighting index: {}", index)))?;
+    device.set_rgb_default_lighting(name)
 }

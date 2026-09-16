@@ -13,11 +13,11 @@ use crate::buttons::ButtonMapping;
 use crate::device::{
     ChatMixReadable, ConfigurableBluetooth, ConfigurableButtons, ConfigurableDpi,
     ConfigurableEqualizer, ConfigurableMicMuteLed, ConfigurableMicVolume, ConfigurablePollingRate,
-    ConfigurableSidetone, ConfigurableSleepTimer, ConfigurableVolumeLimiter, SteelSeriesDevice,
-    WirelessDevice,
+    ConfigurableRgb, ConfigurableSidetone, ConfigurableSleepTimer, ConfigurableVolumeLimiter,
+    SteelSeriesDevice, WirelessDevice,
 };
 use crate::hid::SteelSeriesHid;
-use crate::protocol::{self, BatteryStatus, ChatMixStatus, PollingRate, ReportType};
+use crate::protocol::{self, BatteryStatus, ChatMixStatus, ReportType};
 use crate::{Error, Result};
 
 /// Data needed to query battery/status: which command to send and how to
@@ -53,20 +53,48 @@ pub struct ChatMixProfile {
     pub parse: fn(&[u8]) -> Result<ChatMixStatus>,
 }
 
-/// Data needed to set DPI: the command byte, the DPI-value -> device-byte
+/// Data needed to set DPI: the command byte, the DPI-value -> device-value
 /// mapping table, and the maximum number of presets the device accepts.
+///
+/// The mapping's value is `u16` rather than `u8` to accommodate the Prime
+/// Mini's formula-based sensor, whose encoded value (`dpi / 50`) runs up to
+/// `0x0168` (360) — too large for a single byte. Every other known device
+/// (Rival 3 Wireless, Aerox 3/5, Rival 3 Gen 2) has values that fit in the
+/// low byte, so this is a pure widening with no behavior change for them.
 #[derive(Clone, Copy)]
 pub struct DpiProfile {
     pub command: u8,
-    pub mapping: &'static [(u16, u8)],
+    pub mapping: &'static [(u16, u16)],
     pub max_presets: u8,
+    /// The "selected preset" index `set_dpi` requests as active — rivalcfg
+    /// calls this a device's `first_preset` (the index its own preset
+    /// numbering starts from): `1` for Rival 3 Wireless/Aerox 3/Rival 3 Gen
+    /// 2, `0` for Aerox 5/Prime Mini. This crate doesn't yet support
+    /// choosing a different preset to activate, so `set_dpi` always
+    /// requests this exact preset.
+    pub first_preset: u8,
+    /// Number of little-endian bytes `set_dpi` writes per DPI value: `1`
+    /// for Aerox 3/Aerox 5/Rival 3 Gen 2 (rivalcfg's `dpi_length_byte: 1` —
+    /// `mapping`'s value fits a single byte, no padding sent), `2` for
+    /// Rival 3 Wireless (`dpi_length_byte: 2`, padded with an always-0x00
+    /// high byte since its values also fit in one byte) and the Prime Mini
+    /// (`dpi_length_byte: 2`, whose formula-derived value genuinely needs
+    /// both bytes).
+    pub value_width: u8,
 }
 
-/// Data needed to set polling rate: just the command byte, since the
-/// Hz <-> device-byte mapping ([`PollingRate`]) is shared across devices.
+/// Data needed to set polling rate: the command byte and the device's own
+/// Hz -> device-byte mapping. Originally assumed shared across every device
+/// via the [`PollingRate`] enum's fixed mapping — true for Rival 3 Wireless
+/// (`{125:0x03, 250:0x02, 500:0x01, 1000:0x00}`) — but the Aerox 3/Aerox
+/// 5/Rival 3 Gen 2/Prime Mini family uses a shifted-by-one mapping
+/// (`{125:0x04, 250:0x03, 500:0x02, 1000:0x01}`, verified against
+/// rivalcfg's `aerox3.py` et al.), so the mapping is a per-profile field
+/// rather than a crate-wide constant.
 #[derive(Clone, Copy)]
 pub struct PollingRateProfile {
     pub command: u8,
+    pub choices: &'static [(u16, u8)],
 }
 
 /// Data needed to set button mapping: just the command byte, since
@@ -107,6 +135,41 @@ pub struct EqualizerProfile {
     pub bands: usize,
     /// Built-in presets, each a `bands`-length gain array in dB.
     pub presets: &'static [&'static [f32]],
+}
+
+/// Data needed to drive per-zone RGB lighting: the zone-color command byte
+/// plus a per-zone byte-prefix table (the padding bytes between the command
+/// and the RGB triplet are positional, per rivalcfg's `aerox3.py` /
+/// `rival3_gen2.py` / `prime_mini.py`, not derivable from a formula), and
+/// the reactive-color/brightness/rainbow sub-commands, each `Option` since
+/// the Prime Mini (single zone only) has none of them — see
+/// [`crate::device::aerox_gen2_rgb`] for the concrete profiles.
+#[derive(Clone, Copy)]
+pub struct RgbProfile {
+    /// Command byte for per-zone RGB color (`0x21` on every known device).
+    pub zone_command: u8,
+    /// Zone index -> the exact bytes sent between `zone_command` and the
+    /// `[r, g, b]` triplet.
+    pub zones: &'static [(u8, &'static [u8])],
+    /// Command byte for the reactive (on-click) color, when present.
+    pub reactive_command: Option<u8>,
+    /// Command byte for LED brightness, when present.
+    pub brightness_command: Option<u8>,
+    /// Valid device-byte range for LED brightness (`(0x00, 0x64)` on every
+    /// device that has one); meaningless when `brightness_command` is `None`.
+    pub brightness_range: (u8, u8),
+    /// Command byte(s) for the rainbow effect, when present.
+    pub rainbow_command: Option<&'static [u8]>,
+    /// Named rainbow-effect choices -> bitmask byte; empty when
+    /// `rainbow_command` is `None`.
+    pub rainbow_choices: &'static [(&'static str, u8)],
+    /// Command byte for default (startup) lighting.
+    pub default_lighting_command: u8,
+    /// Named default-lighting choices -> the bytes sent after the command
+    /// byte (2 bytes for the Aerox/Rival 3 Gen 2 family's 4-choice
+    /// combinatorial scheme, 1 byte for the Prime Mini's simpler off/rainbow
+    /// scheme).
+    pub default_lighting_choices: &'static [(&'static str, &'static [u8])],
 }
 
 /// Data needed to set the auto-sleep (inactive time) timer: just the command
@@ -175,6 +238,13 @@ pub struct DeviceProfile {
     pub volume_limiter: Option<VolumeLimiterProfile>,
     pub bluetooth: Option<BluetoothProfile>,
     pub firmware_version: Option<FirmwareVersionProfile>,
+    pub rgb: Option<RgbProfile>,
+    /// Bytes sent (standalone, no readback) to persist settings to device
+    /// memory. Defaults to `[0x09]` via [`DeviceProfile::NONE`] — the save
+    /// command every shipped device (Rival 3 Wireless, Arctis Nova 7) uses
+    /// — since the Aerox/Rival 3 Gen 2/Prime Mini family needs a different
+    /// 2-byte sequence (`[0x11, 0x00]`).
+    pub save_command: &'static [u8],
 }
 
 impl DeviceProfile {
@@ -203,6 +273,8 @@ impl DeviceProfile {
         volume_limiter: None,
         bluetooth: None,
         firmware_version: None,
+        rgb: None,
+        save_command: &[protocol::commands::SAVE],
     };
 }
 
@@ -210,7 +282,7 @@ impl DeviceProfile {
 /// valid range always reflects the actual supported values rather than a
 /// separately hand-maintained duplicate that could silently drift if the
 /// mapping table changes.
-fn dpi_mapping_range(mapping: &[(u16, u8)]) -> (u16, u16, u16) {
+fn dpi_mapping_range(mapping: &[(u16, u16)]) -> (u16, u16, u16) {
     let min = mapping.first().map(|&(dpi, _)| dpi).unwrap_or(0);
     let max = mapping.last().map(|&(dpi, _)| dpi).unwrap_or(0);
     let step = mapping
@@ -230,12 +302,12 @@ fn dpi_range_for(profile: &DeviceProfile) -> (u16, u16, u16) {
     }
 }
 
-/// Converts a DPI value to its device byte using `mapping`.
-fn dpi_to_byte(mapping: &[(u16, u8)], dpi: u16) -> Result<u8> {
+/// Converts a DPI value to its raw device value using `mapping`.
+fn dpi_to_value(mapping: &[(u16, u16)], dpi: u16) -> Result<u16> {
     mapping
         .iter()
         .find(|(d, _)| *d == dpi)
-        .map(|(_, byte)| *byte)
+        .map(|(_, value)| *value)
         .ok_or_else(|| {
             let (min, max, step) = dpi_mapping_range(mapping);
             Error::InvalidParameter(format!(
@@ -243,6 +315,20 @@ fn dpi_to_byte(mapping: &[(u16, u8)], dpi: u16) -> Result<u8> {
                 dpi, min, max, step
             ))
         })
+}
+
+/// Encodes a single DPI value into the little-endian byte(s) `set_dpi`
+/// writes for it, per `value_width` (see [`DpiProfile::value_width`]).
+/// Factored out as a plain function so the per-value wire encoding —
+/// including the Prime Mini's 2-byte path — is testable without a live HID
+/// handle.
+fn encode_dpi_value(mapping: &[(u16, u16)], value_width: u8, dpi: u16) -> Result<Vec<u8>> {
+    let raw = dpi_to_value(mapping, dpi)?;
+    let mut bytes = vec![(raw & 0xFF) as u8];
+    if value_width >= 2 {
+        bytes.push((raw >> 8) as u8);
+    }
+    Ok(bytes)
 }
 
 /// Fetches `$self.profile.$field`, or short-circuits the enclosing method
@@ -312,7 +398,7 @@ impl SteelSeriesDevice for ProfiledDevice {
 
     fn save(&self) -> Result<()> {
         self.hid
-            .write_command(ReportType::Output, &[protocol::commands::SAVE], None)?;
+            .write_command(ReportType::Output, self.profile.save_command, None)?;
         Ok(())
     }
 
@@ -344,13 +430,11 @@ impl ConfigurableDpi for ProfiledDevice {
             )));
         }
 
-        // Build command: [CMD] [count] [selected_preset] [dpi1_low] [dpi1_high] [dpi2_low] ...
-        let mut command = vec![dpi.command, values.len() as u8, 1];
+        // Build command: [CMD] [count] [selected_preset] [dpi1 bytes...] [dpi2 bytes...] ...
+        let mut command = vec![dpi.command, values.len() as u8, dpi.first_preset];
 
         for &value in values {
-            let byte = dpi_to_byte(dpi.mapping, value)?;
-            command.push(byte);
-            command.push(0x00); // High byte (always 0 for this range)
+            command.extend(encode_dpi_value(dpi.mapping, dpi.value_width, value)?);
         }
 
         self.hid
@@ -363,11 +447,28 @@ impl ConfigurableDpi for ProfiledDevice {
     }
 }
 
+/// Looks up a Hz value in a profile's `choices` table, factored out as a
+/// plain function so it's testable without a live HID handle — mirrors
+/// `dpi_to_value`'s standalone-function shape.
+fn polling_rate_to_byte(choices: &[(u16, u8)], hz: u16) -> Result<u8> {
+    choices
+        .iter()
+        .find(|(h, _)| *h == hz)
+        .map(|(_, byte)| *byte)
+        .ok_or_else(|| {
+            Error::InvalidParameter(format!(
+                "Invalid polling rate: {}. Valid options: {}",
+                hz,
+                choices.iter().map(|(h, _)| h.to_string()).collect::<Vec<_>>().join(", ")
+            ))
+        })
+}
+
 impl ConfigurablePollingRate for ProfiledDevice {
     fn set_polling_rate(&self, hz: u16) -> Result<()> {
         let polling_rate = require_capability!(self, polling_rate, "configurable polling rate");
-        let rate = PollingRate::from_hz(hz)?;
-        let command = [polling_rate.command, rate.to_byte()];
+        let byte = polling_rate_to_byte(polling_rate.choices, hz)?;
+        let command = [polling_rate.command, byte];
         self.hid
             .write_command(ReportType::Output, &command, None)?;
         Ok(())
@@ -547,6 +648,169 @@ impl ConfigurableBluetooth for ProfiledDevice {
     }
 }
 
+/// Looks up `zone`'s byte-prefix in `zones`, factored out as a plain
+/// function so it's testable without a live HID handle — mirrors
+/// `dpi_to_value`'s standalone-function shape.
+fn zone_prefix(zones: &[(u8, &'static [u8])], zone: u8) -> Result<&'static [u8]> {
+    zones
+        .iter()
+        .find(|(z, _)| *z == zone)
+        .map(|(_, prefix)| *prefix)
+        .ok_or_else(|| {
+            Error::InvalidParameter(format!(
+                "Invalid RGB zone: {}. Must be one of: {}",
+                zone,
+                zones
+                    .iter()
+                    .map(|(z, _)| z.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        })
+}
+
+/// Builds the `[zone_command] [zone prefix...] [r, g, b]` command for
+/// setting one zone's color.
+fn build_zone_color_command(rgb: &RgbProfile, zone: u8, r: u8, g: u8, b: u8) -> Result<Vec<u8>> {
+    let prefix = zone_prefix(rgb.zones, zone)?;
+    let mut command = vec![rgb.zone_command];
+    command.extend_from_slice(prefix);
+    command.extend_from_slice(&[r, g, b]);
+    Ok(command)
+}
+
+/// Builds the reactive (on-click) color command: `[cmd, 0x01, 0x00, r, g,
+/// b]` when enabled, `[cmd, 0x00, 0x00, 0x00, 0x00, 0x00]` when disabled —
+/// verified against rivalcfg's `reactive_rgbcolor` handler.
+fn build_reactive_color_command(reactive_command: u8, color: Option<(u8, u8, u8)>) -> Vec<u8> {
+    let mut command = vec![reactive_command];
+    match color {
+        Some((r, g, b)) => command.extend_from_slice(&[0x01, 0x00, r, g, b]),
+        None => command.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00]),
+    }
+    command
+}
+
+/// Clamps an LED brightness value into a profile's device-byte
+/// `brightness_range`, factored out as a plain function so it's testable
+/// without a live HID handle — mirrors `validate_sidetone_level`'s
+/// standalone-function shape.
+fn clamp_led_brightness(range: (u8, u8), level: u8) -> u8 {
+    level.clamp(range.0, range.1)
+}
+
+/// Looks up a named rainbow-effect choice's bitmask byte.
+fn rainbow_choice_byte(choices: &[(&'static str, u8)], choice: &str) -> Result<u8> {
+    choices
+        .iter()
+        .find(|(name, _)| *name == choice)
+        .map(|(_, byte)| *byte)
+        .ok_or_else(|| {
+            Error::InvalidParameter(format!(
+                "Invalid rainbow effect: {}. Must be one of: {}",
+                choice,
+                choices.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ")
+            ))
+        })
+}
+
+/// Builds the rainbow-effect command: `[rainbow_command..., choice_byte]`.
+fn build_rainbow_effect_command(
+    rainbow_command: &[u8],
+    choices: &[(&'static str, u8)],
+    choice: &str,
+) -> Result<Vec<u8>> {
+    let byte = rainbow_choice_byte(choices, choice)?;
+    let mut command = rainbow_command.to_vec();
+    command.push(byte);
+    Ok(command)
+}
+
+/// Looks up a named default-lighting choice's bytes.
+fn default_lighting_bytes(
+    choices: &[(&'static str, &'static [u8])],
+    choice: &str,
+) -> Result<&'static [u8]> {
+    choices
+        .iter()
+        .find(|(name, _)| *name == choice)
+        .map(|(_, bytes)| *bytes)
+        .ok_or_else(|| {
+            Error::InvalidParameter(format!(
+                "Invalid default lighting: {}. Must be one of: {}",
+                choice,
+                choices.iter().map(|(n, _)| *n).collect::<Vec<_>>().join(", ")
+            ))
+        })
+}
+
+/// Builds the default-lighting command: `[default_lighting_command,
+/// choice bytes...]`.
+fn build_default_lighting_command(
+    command_byte: u8,
+    choices: &[(&'static str, &'static [u8])],
+    choice: &str,
+) -> Result<Vec<u8>> {
+    let bytes = default_lighting_bytes(choices, choice)?;
+    let mut command = vec![command_byte];
+    command.extend_from_slice(bytes);
+    Ok(command)
+}
+
+impl ConfigurableRgb for ProfiledDevice {
+    fn set_zone_color(&self, zone: u8, r: u8, g: u8, b: u8) -> Result<()> {
+        let rgb = require_capability!(self, rgb, "configurable RGB lighting");
+        let command = build_zone_color_command(rgb, zone, r, g, b)?;
+        self.hid.write_command(ReportType::Output, &command, None)?;
+        Ok(())
+    }
+
+    fn set_reactive_color(&self, color: Option<(u8, u8, u8)>) -> Result<()> {
+        let rgb = require_capability!(self, rgb, "configurable RGB lighting");
+        let reactive_command = rgb.reactive_command.ok_or_else(|| {
+            Error::Unsupported(format!("{} has no reactive RGB color", self.profile.name))
+        })?;
+        let command = build_reactive_color_command(reactive_command, color);
+        self.hid.write_command(ReportType::Output, &command, None)?;
+        Ok(())
+    }
+
+    fn set_led_brightness(&self, level: u8) -> Result<()> {
+        let rgb = require_capability!(self, rgb, "configurable RGB lighting");
+        let brightness_command = rgb.brightness_command.ok_or_else(|| {
+            Error::Unsupported(format!(
+                "{} has no configurable LED brightness",
+                self.profile.name
+            ))
+        })?;
+        let level = clamp_led_brightness(rgb.brightness_range, level);
+        self.hid
+            .write_command(ReportType::Output, &[brightness_command, level], None)?;
+        Ok(())
+    }
+
+    fn set_rainbow_effect(&self, choice: &str) -> Result<()> {
+        let rgb = require_capability!(self, rgb, "configurable RGB lighting");
+        let rainbow_command = rgb.rainbow_command.ok_or_else(|| {
+            Error::Unsupported(format!("{} has no rainbow effect", self.profile.name))
+        })?;
+        let command = build_rainbow_effect_command(rainbow_command, rgb.rainbow_choices, choice)?;
+        self.hid.write_command(ReportType::Output, &command, None)?;
+        Ok(())
+    }
+
+    fn set_default_lighting(&self, choice: &str) -> Result<()> {
+        let rgb = require_capability!(self, rgb, "configurable RGB lighting");
+        let command = build_default_lighting_command(
+            rgb.default_lighting_command,
+            rgb.default_lighting_choices,
+            choice,
+        )?;
+        self.hid.write_command(ReportType::Output, &command, None)?;
+        Ok(())
+    }
+}
+
 impl ProfiledDevice {
     /// Sends `[command]` (plus `extra_byte`, if any), reads back
     /// `readback_length` bytes, and hands the response to `parse`. Shared by
@@ -609,20 +873,66 @@ mod tests {
     #[test]
     fn test_dpi_to_byte_mapping() {
         let mapping = RIVAL3_WIRELESS_PROFILE.dpi.unwrap().mapping;
-        assert_eq!(dpi_to_byte(mapping, 100).unwrap(), 0x00);
-        assert_eq!(dpi_to_byte(mapping, 400).unwrap(), 0x04);
-        assert_eq!(dpi_to_byte(mapping, 800).unwrap(), 0x09);
-        assert_eq!(dpi_to_byte(mapping, 1600).unwrap(), 0x13);
-        assert_eq!(dpi_to_byte(mapping, 3200).unwrap(), 0x27);
-        assert_eq!(dpi_to_byte(mapping, 18000).unwrap(), 0xE0);
+        assert_eq!(dpi_to_value(mapping, 100).unwrap(), 0x00);
+        assert_eq!(dpi_to_value(mapping, 400).unwrap(), 0x04);
+        assert_eq!(dpi_to_value(mapping, 800).unwrap(), 0x09);
+        assert_eq!(dpi_to_value(mapping, 1600).unwrap(), 0x13);
+        assert_eq!(dpi_to_value(mapping, 3200).unwrap(), 0x27);
+        assert_eq!(dpi_to_value(mapping, 18000).unwrap(), 0xE0);
     }
 
     #[test]
     fn test_dpi_to_byte_invalid() {
         let mapping = RIVAL3_WIRELESS_PROFILE.dpi.unwrap().mapping;
-        assert!(dpi_to_byte(mapping, 99).is_err());
-        assert!(dpi_to_byte(mapping, 150).is_err());
-        assert!(dpi_to_byte(mapping, 18100).is_err());
+        assert!(dpi_to_value(mapping, 99).is_err());
+        assert!(dpi_to_value(mapping, 150).is_err());
+        assert!(dpi_to_value(mapping, 18100).is_err());
+    }
+
+    /// Regression guard for the Prime Mini's 2-byte, formula-based DPI
+    /// encoding: `set_dpi` must write both the low and high byte of the
+    /// looked-up value (unlike the 1-byte-per-value Aerox family), and the
+    /// max preset value (18000 -> 0x0168) genuinely needs the high byte.
+    #[test]
+    fn encode_dpi_value_writes_two_bytes_for_prime_mini_value_width() {
+        use crate::device::aerox_gen2_rgb::PRIME_MINI_PROFILE;
+        let dpi = PRIME_MINI_PROFILE.dpi.unwrap();
+        assert_eq!(encode_dpi_value(dpi.mapping, dpi.value_width, 50).unwrap(), vec![0x01, 0x00]);
+        assert_eq!(encode_dpi_value(dpi.mapping, dpi.value_width, 18000).unwrap(), vec![0x68, 0x01]);
+    }
+
+    /// Regression guard for the Aerox family's 1-byte-per-value DPI
+    /// encoding (rivalcfg's `dpi_length_byte: 1`): unlike Rival 3 Wireless,
+    /// `set_dpi` must NOT pad with a high byte.
+    #[test]
+    fn encode_dpi_value_writes_one_byte_for_aerox_value_width() {
+        use crate::device::aerox_gen2_rgb::AEROX3_PROFILE;
+        let dpi = AEROX3_PROFILE.dpi.unwrap();
+        assert_eq!(encode_dpi_value(dpi.mapping, dpi.value_width, 200).unwrap(), vec![0x04]);
+        assert_eq!(encode_dpi_value(dpi.mapping, dpi.value_width, 8500).unwrap(), vec![0xC5]);
+    }
+
+    /// Regression guard: Rival 3 Wireless and the Aerox/Rival 3 Gen
+    /// 2/Prime Mini family use different (shifted-by-one) polling-rate byte
+    /// mappings — verified against rivalcfg's `rival3_wireless.py` vs.
+    /// `aerox3.py` — so each profile's own `choices` must be consulted
+    /// rather than a single shared mapping.
+    #[test]
+    fn polling_rate_to_byte_uses_profiles_own_choices() {
+        let rival3_choices = RIVAL3_WIRELESS_PROFILE.polling_rate.unwrap().choices;
+        assert_eq!(polling_rate_to_byte(rival3_choices, 125).unwrap(), 0x03);
+        assert_eq!(polling_rate_to_byte(rival3_choices, 1000).unwrap(), 0x00);
+
+        use crate::device::aerox_gen2_rgb::AEROX3_PROFILE;
+        let aerox_choices = AEROX3_PROFILE.polling_rate.unwrap().choices;
+        assert_eq!(polling_rate_to_byte(aerox_choices, 125).unwrap(), 0x04);
+        assert_eq!(polling_rate_to_byte(aerox_choices, 1000).unwrap(), 0x01);
+    }
+
+    #[test]
+    fn polling_rate_to_byte_rejects_unsupported_hz() {
+        let choices = RIVAL3_WIRELESS_PROFILE.polling_rate.unwrap().choices;
+        assert!(polling_rate_to_byte(choices, 999).is_err());
     }
 
     #[test]
@@ -663,7 +973,7 @@ mod tests {
     /// shipped before.
     #[test]
     fn dpi_range_derives_from_profile_mapping_not_trait_default() {
-        const TEST_MAPPING: &[(u16, u8)] = &[(50, 0x00), (100, 0x01), (150, 0x02)];
+        const TEST_MAPPING: &[(u16, u16)] = &[(50, 0x00), (100, 0x01), (150, 0x02)];
         const TEST_PROFILE: DeviceProfile = DeviceProfile {
             name: "Test Device",
             vendor_id: 0x1038,
@@ -676,6 +986,8 @@ mod tests {
                 command: 0x99,
                 mapping: TEST_MAPPING,
                 max_presets: 1,
+                first_preset: 1,
+                value_width: 1,
             }),
             polling_rate: None,
             buttons: None,
@@ -687,6 +999,8 @@ mod tests {
             volume_limiter: None,
             bluetooth: None,
             firmware_version: None,
+            rgb: None,
+            save_command: &[protocol::commands::SAVE],
         };
 
         const TRAIT_DEFAULT_RANGE: (u16, u16, u16) = (100, 18000, 100);
@@ -718,6 +1032,8 @@ mod tests {
             volume_limiter: None,
             bluetooth: None,
             firmware_version: None,
+            rgb: None,
+            save_command: &[protocol::commands::SAVE],
         };
 
         assert_eq!(dpi_range_for(&TEST_PROFILE), (0, 0, 0));
@@ -833,5 +1149,115 @@ mod tests {
     fn parse_firmware_version_formats_major_minor() {
         let response = [1, 12];
         assert_eq!(parse_firmware_version(&response).unwrap(), "1.12");
+    }
+
+    // RgbProfile / ConfigurableRgb — spec-only (no Aerox/Rival 3 Gen 2/Prime
+    // Mini hardware available), verified against rivalcfg's aerox3.py /
+    // aerox5.py / rival3_gen2.py / prime_mini.py sources rather than guessed.
+
+    use crate::device::aerox_gen2_rgb::{AEROX3_PROFILE, PRIME_MINI_PROFILE};
+
+    #[test]
+    fn build_zone_color_command_matches_aerox_zone_table() {
+        let rgb = AEROX3_PROFILE.rgb.unwrap();
+        assert_eq!(
+            build_zone_color_command(&rgb, 1, 0x10, 0x20, 0x30).unwrap(),
+            vec![0x21, 0x01, 0x10, 0x20, 0x30]
+        );
+        assert_eq!(
+            build_zone_color_command(&rgb, 2, 0x10, 0x20, 0x30).unwrap(),
+            vec![0x21, 0x02, 0x00, 0x00, 0x00, 0x10, 0x20, 0x30]
+        );
+        assert_eq!(
+            build_zone_color_command(&rgb, 3, 0x10, 0x20, 0x30).unwrap(),
+            vec![0x21, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x20, 0x30]
+        );
+    }
+
+    #[test]
+    fn build_zone_color_command_matches_prime_mini_single_zone() {
+        let rgb = PRIME_MINI_PROFILE.rgb.unwrap();
+        assert_eq!(
+            build_zone_color_command(&rgb, 1, 0xff, 0x00, 0x00).unwrap(),
+            vec![0x21, 0x00, 0xff, 0x00, 0x00]
+        );
+    }
+
+    #[test]
+    fn build_zone_color_command_rejects_unknown_zone() {
+        let rgb = AEROX3_PROFILE.rgb.unwrap();
+        assert!(build_zone_color_command(&rgb, 4, 0, 0, 0).is_err());
+    }
+
+    #[test]
+    fn build_reactive_color_command_matches_rivalcfg_reactive_rgbcolor_handler() {
+        assert_eq!(
+            build_reactive_color_command(0x26, Some((0xff, 0x00, 0x00))),
+            vec![0x26, 0x01, 0x00, 0xff, 0x00, 0x00]
+        );
+        assert_eq!(
+            build_reactive_color_command(0x26, None),
+            vec![0x26, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+    }
+
+    #[test]
+    fn clamp_led_brightness_clamps_to_0x00_0x64() {
+        assert_eq!(clamp_led_brightness((0x00, 0x64), 0), 0x00);
+        assert_eq!(clamp_led_brightness((0x00, 0x64), 100), 0x64);
+        assert_eq!(clamp_led_brightness((0x00, 0x64), 255), 0x64);
+        assert_eq!(clamp_led_brightness((0x00, 0x64), 50), 50);
+    }
+
+    #[test]
+    fn build_rainbow_effect_command_matches_aerox_bitmask_choices() {
+        let rgb = AEROX3_PROFILE.rgb.unwrap();
+        let rainbow_command = rgb.rainbow_command.unwrap();
+        assert_eq!(
+            build_rainbow_effect_command(rainbow_command, rgb.rainbow_choices, "all").unwrap(),
+            vec![0x22, 0b111]
+        );
+        assert_eq!(
+            build_rainbow_effect_command(rainbow_command, rgb.rainbow_choices, "bottom-top").unwrap(),
+            vec![0x22, 0b101]
+        );
+        assert!(build_rainbow_effect_command(rainbow_command, rgb.rainbow_choices, "nope").is_err());
+    }
+
+    #[test]
+    fn build_default_lighting_command_matches_aerox_four_choice_scheme() {
+        let rgb = AEROX3_PROFILE.rgb.unwrap();
+        assert_eq!(
+            build_default_lighting_command(rgb.default_lighting_command, rgb.default_lighting_choices, "off").unwrap(),
+            vec![0x27, 0x00, 0x00]
+        );
+        assert_eq!(
+            build_default_lighting_command(rgb.default_lighting_command, rgb.default_lighting_choices, "reactive-rainbow").unwrap(),
+            vec![0x27, 0x01, 0x01]
+        );
+    }
+
+    #[test]
+    fn build_default_lighting_command_matches_prime_mini_two_choice_scheme() {
+        let rgb = PRIME_MINI_PROFILE.rgb.unwrap();
+        assert_eq!(
+            build_default_lighting_command(rgb.default_lighting_command, rgb.default_lighting_choices, "off").unwrap(),
+            vec![0x27, 0x00]
+        );
+        assert_eq!(
+            build_default_lighting_command(rgb.default_lighting_command, rgb.default_lighting_choices, "rainbow").unwrap(),
+            vec![0x27, 0x01]
+        );
+    }
+
+    /// The Prime Mini's `RgbProfile` genuinely has no reactive color,
+    /// brightness or rainbow effect — confirmed against prime_mini.py's
+    /// settings dict, which lacks those keys entirely.
+    #[test]
+    fn prime_mini_rgb_profile_has_no_reactive_brightness_or_rainbow() {
+        let rgb = PRIME_MINI_PROFILE.rgb.unwrap();
+        assert!(rgb.reactive_command.is_none());
+        assert!(rgb.brightness_command.is_none());
+        assert!(rgb.rainbow_command.is_none());
     }
 }

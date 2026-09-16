@@ -5,13 +5,16 @@
 //! `const DeviceProfile` (see `device::rival3_wireless` / `device::arctis_nova_7`
 //! for examples) and listing it in [`PROFILES`] — nowhere else.
 
+use crate::device::aerox_gen2_rgb::{
+    AEROX3_PROFILE, AEROX5_PROFILE, PRIME_MINI_PROFILE, RIVAL3_GEN2_PROFILE,
+};
 use crate::device::arctis_nova_7::{
     self, ARCTIS_NOVA_7_DISCRETE_BATTERY_PROFILE, ARCTIS_NOVA_7_PROFILE,
     WIRED_PRODUCT_ID as ARCTIS_NOVA_7_WIRED_PRODUCT_ID,
 };
 use crate::device::profile::{DeviceProfile, ProfiledDevice};
 use crate::device::rival3_wireless::{RIVAL3_WIRELESS_PROFILE, PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID};
-use crate::device::{ChatMixReadable, ConfigurableBluetooth, ConfigurableButtons, ConfigurableDpi, ConfigurableEqualizer, ConfigurableMicMuteLed, ConfigurableMicVolume, ConfigurablePollingRate, ConfigurableSidetone, ConfigurableSleepTimer, ConfigurableVolumeLimiter, SteelSeriesDevice, WirelessDevice};
+use crate::device::{ChatMixReadable, ConfigurableBluetooth, ConfigurableButtons, ConfigurableDpi, ConfigurableEqualizer, ConfigurableMicMuteLed, ConfigurableMicVolume, ConfigurablePollingRate, ConfigurableRgb, ConfigurableSidetone, ConfigurableSleepTimer, ConfigurableVolumeLimiter, SteelSeriesDevice, WirelessDevice};
 use crate::hid::SteelSeriesHid;
 use crate::protocol::{BatteryStatus, ChatMixStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
@@ -24,6 +27,10 @@ pub const PROFILES: &[DeviceProfile] = &[
     RIVAL3_WIRELESS_PROFILE,
     ARCTIS_NOVA_7_PROFILE,
     ARCTIS_NOVA_7_DISCRETE_BATTERY_PROFILE,
+    AEROX3_PROFILE,
+    AEROX5_PROFILE,
+    RIVAL3_GEN2_PROFILE,
+    PRIME_MINI_PROFILE,
 ];
 
 /// Looks up the profile claiming `product_id`, if any.
@@ -127,6 +134,41 @@ impl Device {
         self.inner.profile().bluetooth.is_some()
     }
 
+    /// Whether this device has configurable per-zone RGB lighting (mice only).
+    pub fn supports_rgb(&self) -> bool {
+        self.inner.profile().rgb.is_some()
+    }
+
+    /// Number of RGB zones, for devices with configurable RGB lighting.
+    pub fn rgb_zone_count(&self) -> usize {
+        self.inner.profile().rgb.map(|rgb| rgb.zones.len()).unwrap_or(0)
+    }
+
+    /// Whether this device's RGB lighting has a reactive (on-click) color.
+    pub fn supports_rgb_reactive_color(&self) -> bool {
+        self.inner.profile().rgb.is_some_and(|rgb| rgb.reactive_command.is_some())
+    }
+
+    /// Whether this device's RGB lighting has a configurable brightness.
+    pub fn supports_rgb_brightness(&self) -> bool {
+        self.inner.profile().rgb.is_some_and(|rgb| rgb.brightness_command.is_some())
+    }
+
+    /// Whether this device's RGB lighting has a rainbow effect.
+    pub fn supports_rgb_rainbow(&self) -> bool {
+        self.inner.profile().rgb.is_some_and(|rgb| rgb.rainbow_command.is_some())
+    }
+
+    /// Named rainbow-effect choices, for devices with a rainbow effect.
+    pub fn rgb_rainbow_choices(&self) -> &'static [(&'static str, u8)] {
+        self.inner.profile().rgb.map(|rgb| rgb.rainbow_choices).unwrap_or(&[])
+    }
+
+    /// Named default-lighting choices, for devices with configurable RGB lighting.
+    pub fn rgb_default_lighting_choices(&self) -> &'static [(&'static str, &'static [u8])] {
+        self.inner.profile().rgb.map(|rgb| rgb.default_lighting_choices).unwrap_or(&[])
+    }
+
     /// Number of adjustable equalizer bands, for devices with a configurable equalizer.
     pub fn equalizer_bands(&self) -> usize {
         self.inner.equalizer_bands()
@@ -187,6 +229,26 @@ impl Device {
 
     pub fn set_bluetooth_call_volume(&self, mode: u8) -> Result<()> {
         self.inner.set_bluetooth_call_volume(mode)
+    }
+
+    pub fn set_rgb_zone_color(&self, zone: u8, r: u8, g: u8, b: u8) -> Result<()> {
+        self.inner.set_zone_color(zone, r, g, b)
+    }
+
+    pub fn set_rgb_reactive_color(&self, color: Option<(u8, u8, u8)>) -> Result<()> {
+        self.inner.set_reactive_color(color)
+    }
+
+    pub fn set_rgb_brightness(&self, level: u8) -> Result<()> {
+        self.inner.set_led_brightness(level)
+    }
+
+    pub fn set_rgb_rainbow_effect(&self, choice: &str) -> Result<()> {
+        self.inner.set_rainbow_effect(choice)
+    }
+
+    pub fn set_rgb_default_lighting(&self, choice: &str) -> Result<()> {
+        self.inner.set_default_lighting(choice)
     }
 }
 
@@ -272,6 +334,14 @@ pub struct DeviceSummary {
     pub supports_sleep_timer: bool,
     pub supports_volume_limiter: bool,
     pub supports_bluetooth_settings: bool,
+    pub supports_rgb: bool,
+    pub rgb_zone_count: usize,
+    pub supports_rgb_brightness: bool,
+    pub supports_rgb_rainbow: bool,
+    /// Named default-lighting choices (e.g. `["off", "reactive", "rainbow",
+    /// "reactive-rainbow"]`), for populating the GUI's dropdown; empty when
+    /// `supports_rgb` is `false`.
+    pub rgb_default_lighting_choices: Vec<String>,
     pub dpi_range: Option<(u16, u16, u16)>,
     pub connection_type: ConnectionType,
     pub battery: Option<BatteryStatus>,
@@ -314,6 +384,11 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_sleep_timer: false,
                     supports_volume_limiter: false,
                     supports_bluetooth_settings: false,
+                    supports_rgb: false,
+                    rgb_zone_count: 0,
+                    supports_rgb_brightness: false,
+                    supports_rgb_rainbow: false,
+                    rgb_default_lighting_choices: Vec::new(),
                     dpi_range: None,
                     connection_type,
                     battery: None,
@@ -335,6 +410,15 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     let supports_sleep_timer = device.supports_sleep_timer();
                     let supports_volume_limiter = device.supports_volume_limiter();
                     let supports_bluetooth_settings = device.supports_bluetooth_settings();
+                    let supports_rgb = device.supports_rgb();
+                    let rgb_zone_count = device.rgb_zone_count();
+                    let supports_rgb_brightness = device.supports_rgb_brightness();
+                    let supports_rgb_rainbow = device.supports_rgb_rainbow();
+                    let rgb_default_lighting_choices: Vec<String> = device
+                        .rgb_default_lighting_choices()
+                        .iter()
+                        .map(|(name, _)| name.to_string())
+                        .collect();
                     let dpi_range = device.dpi_range();
                     let supports_chatmix = device.supports_chatmix();
                     let chatmix_result = supports_chatmix.then(|| device.chatmix_status());
@@ -354,6 +438,11 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_sleep_timer,
                             supports_volume_limiter,
                             supports_bluetooth_settings,
+                            supports_rgb,
+                            rgb_zone_count,
+                            supports_rgb_brightness,
+                            supports_rgb_rainbow,
+                            rgb_default_lighting_choices,
                             dpi_range,
                             connection_type,
                             battery: Some(status),
@@ -378,6 +467,11 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_sleep_timer,
                             supports_volume_limiter,
                             supports_bluetooth_settings,
+                            supports_rgb,
+                            rgb_zone_count,
+                            supports_rgb_brightness,
+                            supports_rgb_rainbow,
+                            rgb_default_lighting_choices,
                             dpi_range,
                             connection_type,
                             battery: None,
@@ -403,6 +497,11 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_sleep_timer: false,
                     supports_volume_limiter: false,
                     supports_bluetooth_settings: false,
+                    supports_rgb: false,
+                    rgb_zone_count: 0,
+                    supports_rgb_brightness: false,
+                    supports_rgb_rainbow: false,
+                    rgb_default_lighting_choices: Vec::new(),
                     dpi_range: None,
                     connection_type,
                     battery: None,

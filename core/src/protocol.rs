@@ -66,6 +66,36 @@ pub mod commands {
     /// single-byte [`SAVE`], required specifically after setting
     /// Bluetooth-when-powered-on
     pub const BLUETOOTH_SAVE: [u8; 2] = [0x06, 0x09];
+
+    // Aerox 3 / Aerox 5 / Rival 3 Gen 2 / Prime Mini family (see
+    // `crate::device::aerox_gen2_rgb`). This family's command bytes differ
+    // from Rival 3 Wireless's for the same conceptual settings (e.g.
+    // sensitivity is `0x2D` here vs. [`SENSITIVITY`]'s `0x20`), verified
+    // against rivalcfg's `aerox3.py`/`aerox5.py`/`rival3_gen2.py`/`prime_mini.py`.
+
+    /// Set DPI/sensitivity presets (Aerox/Rival 3 Gen 2/Prime Mini family)
+    pub const SENSITIVITY_AEROX_GEN2: u8 = 0x2D;
+
+    /// Set polling rate (Aerox/Rival 3 Gen 2/Prime Mini family)
+    pub const POLLING_RATE_AEROX_GEN2: u8 = 0x2B;
+
+    /// Set button mapping (Aerox/Rival 3 Gen 2/Prime Mini family)
+    pub const BUTTON_MAPPING_AEROX_GEN2: u8 = 0x2A;
+
+    /// Set per-zone RGB color (Aerox/Rival 3 Gen 2/Prime Mini family)
+    pub const RGB_ZONE_COLOR: u8 = 0x21;
+
+    /// Set rainbow effect (Aerox 3/Aerox 5/Rival 3 Gen 2; absent on Prime Mini)
+    pub const RGB_RAINBOW_EFFECT: u8 = 0x22;
+
+    /// Set RGB LED brightness (Aerox 3/Aerox 5/Rival 3 Gen 2; absent on Prime Mini)
+    pub const RGB_BRIGHTNESS: u8 = 0x23;
+
+    /// Set reactive (on-click) RGB color (Aerox 3/Aerox 5/Rival 3 Gen 2; absent on Prime Mini)
+    pub const RGB_REACTIVE_COLOR: u8 = 0x26;
+
+    /// Set default (startup) lighting (Aerox/Rival 3 Gen 2/Prime Mini family)
+    pub const RGB_DEFAULT_LIGHTING: u8 = 0x27;
 }
 
 /// Polling rate options

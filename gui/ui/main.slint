@@ -1,4 +1,4 @@
-import { Button, CheckBox, ComboBox, LineEdit, ScrollView, SpinBox, Palette } from "std-widgets.slint";
+import { Button, CheckBox, ComboBox, LineEdit, ScrollView, Slider, SpinBox, Palette } from "std-widgets.slint";
 
 component NavItem inherits Rectangle {
     in property <string> label;
@@ -275,6 +275,11 @@ component DeviceDetailPage inherits Rectangle {
     in property <bool> supports-sleep-timer;
     in property <bool> supports-volume-limiter;
     in property <bool> supports-bluetooth-settings;
+    in property <bool> supports-rgb;
+    in property <int> rgb-zone-count: 0;
+    in property <bool> supports-rgb-brightness;
+    in property <bool> supports-rgb-rainbow;
+    in property <[string]> rgb-default-lighting-choices: [];
     in property <bool> has-battery;
     in property <int> battery-percent;
     in property <bool> charging;
@@ -299,6 +304,12 @@ component DeviceDetailPage inherits Rectangle {
     in-out property <int> button-mapping-index-3: 4;
     in-out property <int> button-mapping-index-4: 4;
     in-out property <int> button-mapping-index-5: 4;
+    in-out property <string> rgb-zone1-color: "#ff0000";
+    in-out property <string> rgb-zone2-color: "#00ff00";
+    in-out property <string> rgb-zone3-color: "#0000ff";
+    in-out property <float> rgb-brightness: 100;
+    in-out property <bool> rgb-rainbow-enabled: false;
+    in-out property <int> rgb-default-lighting-index: 0;
     callback back();
     callback apply-dpi(string);
     callback apply-polling-rate(int);
@@ -311,6 +322,10 @@ component DeviceDetailPage inherits Rectangle {
     callback apply-bluetooth-power-on(bool);
     callback apply-bluetooth-call-volume(int);
     callback apply-button-mapping([int]);
+    callback apply-rgb-zone-color(int, string);
+    callback apply-rgb-brightness(float);
+    callback apply-rgb-rainbow(bool);
+    callback apply-rgb-default-lighting(int);
 
     ScrollView {
         vertical-stretch: 1;
@@ -628,7 +643,61 @@ component DeviceDetailPage inherits Rectangle {
                 }
             }
 
-            if supported && !supports-dpi && !supports-polling-rate && !supports-button-mapping && !supports-sidetone && !supports-mic-mute-led && !supports-mic-volume && !supports-equalizer && !supports-sleep-timer && !supports-volume-limiter && !supports-bluetooth-settings: Rectangle {
+            if supported && supports-rgb: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "RGB lighting"; font-weight: 700; font-size: 13px; }
+
+                    if rgb-zone-count >= 1: HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Zone 1"; vertical-alignment: center; width: 70px; }
+                        LineEdit { text <=> root.rgb-zone1-color; placeholder-text: "#ff0000"; horizontal-stretch: 1; }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-rgb-zone-color(1, root.rgb-zone1-color); } }
+                    }
+                    if rgb-zone-count >= 2: HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Zone 2"; vertical-alignment: center; width: 70px; }
+                        LineEdit { text <=> root.rgb-zone2-color; placeholder-text: "#00ff00"; horizontal-stretch: 1; }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-rgb-zone-color(2, root.rgb-zone2-color); } }
+                    }
+                    if rgb-zone-count >= 3: HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Zone 3"; vertical-alignment: center; width: 70px; }
+                        LineEdit { text <=> root.rgb-zone3-color; placeholder-text: "#0000ff"; horizontal-stretch: 1; }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-rgb-zone-color(3, root.rgb-zone3-color); } }
+                    }
+
+                    if supports-rgb-brightness: HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Brightness"; vertical-alignment: center; width: 70px; }
+                        Slider { minimum: 0; maximum: 100; value <=> root.rgb-brightness; horizontal-stretch: 1; }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-rgb-brightness(root.rgb-brightness); } }
+                    }
+
+                    if supports-rgb-rainbow: CheckBox {
+                        text: "Rainbow effect";
+                        checked <=> root.rgb-rainbow-enabled;
+                        toggled => { root.apply-rgb-rainbow(self.checked); }
+                    }
+
+                    if rgb-default-lighting-choices.length > 0: HorizontalLayout {
+                        spacing: 8px;
+                        Text { text: "Default lighting"; vertical-alignment: center; width: 100px; }
+                        ComboBox {
+                            model: root.rgb-default-lighting-choices;
+                            current-index <=> root.rgb-default-lighting-index;
+                            horizontal-stretch: 1;
+                        }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-rgb-default-lighting(root.rgb-default-lighting-index); } }
+                    }
+                    if status != "": Text { text: status; font-size: 11px; wrap: word-wrap; color: status-color; }
+                }
+            }
+
+            if supported && !supports-dpi && !supports-polling-rate && !supports-button-mapping && !supports-sidetone && !supports-mic-mute-led && !supports-mic-volume && !supports-equalizer && !supports-sleep-timer && !supports-volume-limiter && !supports-bluetooth-settings && !supports-rgb: Rectangle {
                 border-radius: 10px;
                 background: Palette.foreground.with-alpha(0.04);
                 VerticalLayout {
@@ -823,6 +892,11 @@ export component MainWindow inherits Window {
     in property <bool> detail-supports-sleep-timer: false;
     in property <bool> detail-supports-volume-limiter: false;
     in property <bool> detail-supports-bluetooth-settings: false;
+    in property <bool> detail-supports-rgb: false;
+    in property <int> detail-rgb-zone-count: 0;
+    in property <bool> detail-supports-rgb-brightness: false;
+    in property <bool> detail-supports-rgb-rainbow: false;
+    in property <[string]> detail-rgb-default-lighting-choices: [];
     in property <bool> detail-has-battery: false;
     in property <int> detail-battery-percent: 0;
     in property <bool> detail-charging: false;
@@ -847,6 +921,12 @@ export component MainWindow inherits Window {
     in-out property <int> button-mapping-index-3: 4;
     in-out property <int> button-mapping-index-4: 4;
     in-out property <int> button-mapping-index-5: 4;
+    in-out property <string> rgb-zone1-color: "#ff0000";
+    in-out property <string> rgb-zone2-color: "#00ff00";
+    in-out property <string> rgb-zone3-color: "#0000ff";
+    in-out property <float> rgb-brightness: 100;
+    in-out property <bool> rgb-rainbow-enabled: false;
+    in-out property <int> rgb-default-lighting-index: 0;
 
     callback refresh();
     callback select-device(int);
@@ -862,6 +942,10 @@ export component MainWindow inherits Window {
     callback apply-bluetooth-power-on(bool);
     callback apply-bluetooth-call-volume(int);
     callback apply-button-mapping([int]);
+    callback apply-rgb-zone-color(int, string);
+    callback apply-rgb-brightness(float);
+    callback apply-rgb-rainbow(bool);
+    callback apply-rgb-default-lighting(int);
     callback save-poll-interval(int);
     callback save-tray-icon-style(bool);
     callback save-notification-persistent(bool);
@@ -917,6 +1001,11 @@ export component MainWindow inherits Window {
                 supports-sleep-timer: root.detail-supports-sleep-timer;
                 supports-volume-limiter: root.detail-supports-volume-limiter;
                 supports-bluetooth-settings: root.detail-supports-bluetooth-settings;
+                supports-rgb: root.detail-supports-rgb;
+                rgb-zone-count: root.detail-rgb-zone-count;
+                supports-rgb-brightness: root.detail-supports-rgb-brightness;
+                supports-rgb-rainbow: root.detail-supports-rgb-rainbow;
+                rgb-default-lighting-choices: root.detail-rgb-default-lighting-choices;
                 has-battery: root.detail-has-battery;
                 battery-percent: root.detail-battery-percent;
                 charging: root.detail-charging;
@@ -941,6 +1030,12 @@ export component MainWindow inherits Window {
                 button-mapping-index-3 <=> root.button-mapping-index-3;
                 button-mapping-index-4 <=> root.button-mapping-index-4;
                 button-mapping-index-5 <=> root.button-mapping-index-5;
+                rgb-zone1-color <=> root.rgb-zone1-color;
+                rgb-zone2-color <=> root.rgb-zone2-color;
+                rgb-zone3-color <=> root.rgb-zone3-color;
+                rgb-brightness <=> root.rgb-brightness;
+                rgb-rainbow-enabled <=> root.rgb-rainbow-enabled;
+                rgb-default-lighting-index <=> root.rgb-default-lighting-index;
                 back => { root.back-to-grid(); }
                 apply-dpi(values) => { root.apply-dpi(values); }
                 apply-polling-rate(index) => { root.apply-polling-rate(index); }
@@ -953,6 +1048,10 @@ export component MainWindow inherits Window {
                 apply-bluetooth-power-on(enabled) => { root.apply-bluetooth-power-on(enabled); }
                 apply-bluetooth-call-volume(mode) => { root.apply-bluetooth-call-volume(mode); }
                 apply-button-mapping(indices) => { root.apply-button-mapping(indices); }
+                apply-rgb-zone-color(zone, color) => { root.apply-rgb-zone-color(zone, color); }
+                apply-rgb-brightness(level) => { root.apply-rgb-brightness(level); }
+                apply-rgb-rainbow(enabled) => { root.apply-rgb-rainbow(enabled); }
+                apply-rgb-default-lighting(index) => { root.apply-rgb-default-lighting(index); }
             }
         }
     }

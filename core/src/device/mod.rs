@@ -1,6 +1,8 @@
 //! Device implementations for SteelSeries hardware
 
+pub mod aerox_gen2_rgb;
 pub mod arctis_nova_7;
+pub mod dpi_tables;
 pub mod profile;
 pub mod rival3_wireless;
 
@@ -124,4 +126,27 @@ pub trait ConfigurableButtons {
     fn default_button_mapping(&self) -> crate::buttons::ButtonMapping {
         crate::buttons::ButtonMapping::default_mapping()
     }
+}
+
+/// Common interface for mice with per-zone configurable RGB lighting.
+/// Introduced for the Aerox 3/Aerox 5/Rival 3 Gen 2/Prime Mini family (see
+/// [`crate::device::aerox_gen2_rgb`]) as the foundation every other
+/// RGB-bearing mouse family reuses; the zone-count/padding shape varies per
+/// family, so a device's [`crate::device::profile::RgbProfile`] declares its
+/// own zone table rather than assuming this family's 3-zone layout.
+pub trait ConfigurableRgb {
+    /// Set one zone's static color (zone indices are device-specific; see
+    /// the device's `RgbProfile::zones`).
+    fn set_zone_color(&self, zone: u8, r: u8, g: u8, b: u8) -> Result<()>;
+    /// Set (or disable, with `None`) the reactive (on-click) color.
+    fn set_reactive_color(&self, color: Option<(u8, u8, u8)>) -> Result<()>;
+    /// Set LED brightness; clamped to the device's valid range (0-100 on
+    /// every known device).
+    fn set_led_brightness(&self, level: u8) -> Result<()>;
+    /// Set the rainbow effect by name (device-specific choices; see the
+    /// device's `RgbProfile::rainbow_choices`).
+    fn set_rainbow_effect(&self, choice: &str) -> Result<()>;
+    /// Set the default (startup) lighting by name (device-specific choices;
+    /// see the device's `RgbProfile::default_lighting_choices`).
+    fn set_default_lighting(&self, choice: &str) -> Result<()>;
 }
