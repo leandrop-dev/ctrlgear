@@ -1,8 +1,8 @@
 //! SteelSeries Arctis Nova 7 Wireless headset profile data.
 //!
-//! Battery and chatmix (game/chat volume balance) only: this headset has no
-//! DPI/polling-rate/button concepts, so its [`DeviceProfile`] leaves those
-//! fields `None` —
+//! Battery, chatmix (game/chat volume balance) and sidetone only: this
+//! headset has no DPI/polling-rate/button concepts, so its [`DeviceProfile`]
+//! leaves those fields `None` —
 //! [`crate::device::profile::ProfiledDevice`] returns [`Error::Unsupported`]
 //! for them generically.
 //!
@@ -17,8 +17,8 @@
 //! discrete 0-4 level requiring a different mapping to percent — out of
 //! scope until that variant needs support.
 
-use crate::device::profile::{BatteryProfile, ChatMixProfile, DeviceProfile};
-use crate::protocol::{BatteryStatus, ChatMixStatus, STEELSERIES_VENDOR_ID};
+use crate::device::profile::{BatteryProfile, ChatMixProfile, DeviceProfile, SidetoneProfile};
+use crate::protocol::{commands, BatteryStatus, ChatMixStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
 
 /// Product ID for Arctis Nova 7 Wireless (percentage-battery firmware),
@@ -91,8 +91,8 @@ fn parse_chatmix(response: &[u8]) -> Result<ChatMixStatus> {
     })
 }
 
-/// SteelSeries Arctis Nova 7 device profile. Battery and chatmix only:
-/// `dpi`, `polling_rate` and `buttons` all come from `DeviceProfile::NONE`.
+/// SteelSeries Arctis Nova 7 device profile. Battery, chatmix and sidetone
+/// only: `dpi`, `polling_rate` and `buttons` all come from `DeviceProfile::NONE`.
 pub const ARCTIS_NOVA_7_PROFILE: DeviceProfile = DeviceProfile {
     name: "SteelSeries Arctis Nova 7",
     vendor_id: STEELSERIES_VENDOR_ID,
@@ -109,6 +109,9 @@ pub const ARCTIS_NOVA_7_PROFILE: DeviceProfile = DeviceProfile {
         extra_byte: None,
         readback_length: STATUS_RESPONSE_BUF_LEN,
         parse: parse_chatmix,
+    }),
+    sidetone: Some(SidetoneProfile {
+        command: commands::SIDETONE,
     }),
     ..DeviceProfile::NONE
 };

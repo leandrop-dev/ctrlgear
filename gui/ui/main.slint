@@ -268,6 +268,7 @@ component DeviceDetailPage inherits Rectangle {
     in property <bool> supports-dpi;
     in property <bool> supports-polling-rate;
     in property <bool> supports-button-mapping;
+    in property <bool> supports-sidetone;
     in property <bool> has-battery;
     in property <int> battery-percent;
     in property <bool> charging;
@@ -279,6 +280,7 @@ component DeviceDetailPage inherits Rectangle {
     in-out property <string> dpi-input;
     in property <string> dpi-help: "";
     in-out property <int> polling-rate-index: 3;
+    in-out property <int> sidetone-index: 0;
     in-out property <int> button-mapping-index-0: 4;
     in-out property <int> button-mapping-index-1: 4;
     in-out property <int> button-mapping-index-2: 4;
@@ -288,6 +290,7 @@ component DeviceDetailPage inherits Rectangle {
     callback back();
     callback apply-dpi(string);
     callback apply-polling-rate(int);
+    callback apply-sidetone(int);
     callback apply-button-mapping([int]);
 
     ScrollView {
@@ -374,6 +377,25 @@ component DeviceDetailPage inherits Rectangle {
                 }
             }
 
+            if supported && supports-sidetone: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "Sidetone"; font-weight: 700; font-size: 13px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        ComboBox {
+                            model: ["Off", "Low", "Medium", "High"];
+                            current-index <=> root.sidetone-index;
+                            horizontal-stretch: 1;
+                        }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-sidetone(root.sidetone-index); } }
+                    }
+                }
+            }
+
             if supported && supports-button-mapping: Rectangle {
                 border-radius: 10px;
                 background: Palette.foreground.with-alpha(0.04);
@@ -453,7 +475,7 @@ component DeviceDetailPage inherits Rectangle {
                 }
             }
 
-            if supported && !supports-dpi && !supports-polling-rate && !supports-button-mapping: Rectangle {
+            if supported && !supports-dpi && !supports-polling-rate && !supports-button-mapping && !supports-sidetone: Rectangle {
                 border-radius: 10px;
                 background: Palette.foreground.with-alpha(0.04);
                 VerticalLayout {
@@ -614,6 +636,7 @@ export component MainWindow inherits Window {
     in property <bool> detail-supports-dpi: false;
     in property <bool> detail-supports-polling-rate: false;
     in property <bool> detail-supports-button-mapping: false;
+    in property <bool> detail-supports-sidetone: false;
     in property <bool> detail-has-battery: false;
     in property <int> detail-battery-percent: 0;
     in property <bool> detail-charging: false;
@@ -625,6 +648,7 @@ export component MainWindow inherits Window {
     in property <string> detail-dpi-help: "";
     in-out property <string> dpi-input: "400,800,1600";
     in-out property <int> polling-rate-index: 3;
+    in-out property <int> sidetone-index: 0;
     in-out property <int> button-mapping-index-0: 4;
     in-out property <int> button-mapping-index-1: 4;
     in-out property <int> button-mapping-index-2: 4;
@@ -637,6 +661,7 @@ export component MainWindow inherits Window {
     callback back-to-grid();
     callback apply-dpi(string);
     callback apply-polling-rate(int);
+    callback apply-sidetone(int);
     callback apply-button-mapping([int]);
     callback save-poll-interval(int);
     callback save-tray-icon-style(bool);
@@ -682,6 +707,7 @@ export component MainWindow inherits Window {
                 supports-dpi: root.detail-supports-dpi;
                 supports-polling-rate: root.detail-supports-polling-rate;
                 supports-button-mapping: root.detail-supports-button-mapping;
+                supports-sidetone: root.detail-supports-sidetone;
                 has-battery: root.detail-has-battery;
                 battery-percent: root.detail-battery-percent;
                 charging: root.detail-charging;
@@ -693,6 +719,7 @@ export component MainWindow inherits Window {
                 dpi-help: root.detail-dpi-help;
                 dpi-input <=> root.dpi-input;
                 polling-rate-index <=> root.polling-rate-index;
+                sidetone-index <=> root.sidetone-index;
                 button-mapping-index-0 <=> root.button-mapping-index-0;
                 button-mapping-index-1 <=> root.button-mapping-index-1;
                 button-mapping-index-2 <=> root.button-mapping-index-2;
@@ -702,6 +729,7 @@ export component MainWindow inherits Window {
                 back => { root.back-to-grid(); }
                 apply-dpi(values) => { root.apply-dpi(values); }
                 apply-polling-rate(index) => { root.apply-polling-rate(index); }
+                apply-sidetone(index) => { root.apply-sidetone(index); }
                 apply-button-mapping(indices) => { root.apply-button-mapping(indices); }
             }
         }

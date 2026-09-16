@@ -11,7 +11,7 @@ use crate::device::arctis_nova_7::{
 };
 use crate::device::profile::{DeviceProfile, ProfiledDevice};
 use crate::device::rival3_wireless::{RIVAL3_WIRELESS_PROFILE, PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID};
-use crate::device::{ChatMixReadable, ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, SteelSeriesDevice, WirelessDevice};
+use crate::device::{ChatMixReadable, ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, ConfigurableSidetone, SteelSeriesDevice, WirelessDevice};
 use crate::hid::SteelSeriesHid;
 use crate::protocol::{BatteryStatus, ChatMixStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
@@ -79,6 +79,11 @@ impl Device {
         self.inner.profile().chatmix.is_some()
     }
 
+    /// Whether this device has a configurable sidetone level (headsets only).
+    pub fn supports_sidetone(&self) -> bool {
+        self.inner.profile().sidetone.is_some()
+    }
+
     /// Valid DPI range as (min, max, step), for devices with configurable DPI.
     pub fn dpi_range(&self) -> Option<(u16, u16, u16)> {
         if self.inner.profile().dpi.is_some() {
@@ -98,6 +103,10 @@ impl Device {
 
     pub fn set_button_mapping(&self, mapping: &crate::buttons::ButtonMapping) -> Result<()> {
         self.inner.set_button_mapping(mapping)
+    }
+
+    pub fn set_sidetone(&self, level: u8) -> Result<()> {
+        self.inner.set_sidetone(level)
     }
 }
 
@@ -169,6 +178,7 @@ pub struct DeviceSummary {
     pub supports_dpi: bool,
     pub supports_polling_rate: bool,
     pub supports_button_mapping: bool,
+    pub supports_sidetone: bool,
     pub dpi_range: Option<(u16, u16, u16)>,
     pub connection_type: ConnectionType,
     pub battery: Option<BatteryStatus>,
@@ -204,6 +214,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_dpi: false,
                     supports_polling_rate: false,
                     supports_button_mapping: false,
+                    supports_sidetone: false,
                     dpi_range: None,
                     connection_type,
                     battery: None,
@@ -218,6 +229,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     let supports_dpi = device.supports_dpi();
                     let supports_polling_rate = device.supports_polling_rate();
                     let supports_button_mapping = device.supports_button_mapping();
+                    let supports_sidetone = device.supports_sidetone();
                     let dpi_range = device.dpi_range();
                     let supports_chatmix = device.supports_chatmix();
                     let chatmix_result = supports_chatmix.then(|| device.chatmix_status());
@@ -230,6 +242,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_dpi,
                             supports_polling_rate,
                             supports_button_mapping,
+                            supports_sidetone,
                             dpi_range,
                             connection_type,
                             battery: Some(status),
@@ -247,6 +260,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_dpi,
                             supports_polling_rate,
                             supports_button_mapping,
+                            supports_sidetone,
                             dpi_range,
                             connection_type,
                             battery: None,
@@ -265,6 +279,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_dpi: false,
                     supports_polling_rate: false,
                     supports_button_mapping: false,
+                    supports_sidetone: false,
                     dpi_range: None,
                     connection_type,
                     battery: None,
@@ -349,5 +364,11 @@ mod tests {
         assert!(ARCTIS_NOVA_7_PROFILE.dpi.is_none());
         assert!(ARCTIS_NOVA_7_PROFILE.polling_rate.is_none());
         assert!(ARCTIS_NOVA_7_PROFILE.buttons.is_none());
+    }
+
+    #[test]
+    fn arctis_nova_7_profile_declares_sidetone_but_rival3_does_not() {
+        assert!(ARCTIS_NOVA_7_PROFILE.sidetone.is_some());
+        assert!(RIVAL3_WIRELESS_PROFILE.sidetone.is_none());
     }
 }

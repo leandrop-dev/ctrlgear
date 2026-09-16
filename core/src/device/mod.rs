@@ -46,6 +46,13 @@ pub trait ConfigurablePollingRate {
     fn set_polling_rate(&self, hz: u16) -> Result<()>;
 }
 
+/// Common interface for headsets with adjustable sidetone (mic monitoring) level
+pub trait ConfigurableSidetone {
+    /// Set sidetone level. `level` is 0-3 (Off/Low/Medium/High), per SteelSeries's
+    /// 4-level Nova 7 protocol.
+    fn set_sidetone(&self, level: u8) -> Result<()>;
+}
+
 /// Common interface for wireless devices
 pub trait WirelessDevice {
     /// Get battery status

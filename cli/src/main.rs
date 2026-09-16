@@ -31,6 +31,11 @@ enum Commands {
         /// Available actions: button1-6, dpi, scrollup, scrolldown, disabled
         mapping: String,
     },
+    /// Set sidetone (mic monitoring) level
+    Sidetone {
+        /// Sidetone level: 0 (Off), 1 (Low), 2 (Medium), or 3 (High)
+        level: u8,
+    },
     /// Get battery status (wireless devices only)
     Battery,
     /// Save current settings to device memory
@@ -70,6 +75,10 @@ fn main() -> anyhow::Result<()> {
         Commands::PollingRate { hz } => {
             device.set_polling_rate(hz)?;
             println!("Set polling rate to: {} Hz", hz);
+        }
+        Commands::Sidetone { level } => {
+            device.set_sidetone(level)?;
+            println!("Set sidetone level to: {}", level);
         }
         Commands::Buttons { mapping } => {
             let button_mapping = ButtonMapping::from_string(&mapping)?;

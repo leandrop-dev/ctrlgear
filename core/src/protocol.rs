@@ -32,6 +32,9 @@ pub mod commands {
     /// Set button mapping
     pub const BUTTON_MAPPING: u8 = 0x19;
 
+    /// Set sidetone (mic monitoring) level
+    pub const SIDETONE: u8 = 0x39;
+
     /// Set DPI/sensitivity
     pub const SENSITIVITY: u8 = 0x20;
 

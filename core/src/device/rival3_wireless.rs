@@ -94,4 +94,5 @@ pub const RIVAL3_WIRELESS_PROFILE: DeviceProfile = DeviceProfile {
     buttons: Some(ButtonsProfile {
         command: commands::BUTTON_MAPPING,
     }),
+    sidetone: None,
 };
