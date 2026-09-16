@@ -11,7 +11,7 @@ use crate::device::arctis_nova_7::{
 };
 use crate::device::profile::{DeviceProfile, ProfiledDevice};
 use crate::device::rival3_wireless::{RIVAL3_WIRELESS_PROFILE, PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID};
-use crate::device::{ChatMixReadable, ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate, ConfigurableSidetone, SteelSeriesDevice, WirelessDevice};
+use crate::device::{ChatMixReadable, ConfigurableButtons, ConfigurableDpi, ConfigurableMicMuteLed, ConfigurableMicVolume, ConfigurablePollingRate, ConfigurableSidetone, SteelSeriesDevice, WirelessDevice};
 use crate::hid::SteelSeriesHid;
 use crate::protocol::{BatteryStatus, ChatMixStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
@@ -79,9 +79,24 @@ impl Device {
         self.inner.profile().chatmix.is_some()
     }
 
+    /// Whether this device has a readable battery status (wireless devices only).
+    pub fn supports_battery(&self) -> bool {
+        self.inner.profile().battery.is_some()
+    }
+
     /// Whether this device has a configurable sidetone level (headsets only).
     pub fn supports_sidetone(&self) -> bool {
         self.inner.profile().sidetone.is_some()
+    }
+
+    /// Whether this device has a configurable mic-mute LED brightness (headsets only).
+    pub fn supports_mic_mute_led(&self) -> bool {
+        self.inner.profile().mic_mute_led.is_some()
+    }
+
+    /// Whether this device has a configurable mic volume (headsets only).
+    pub fn supports_mic_volume(&self) -> bool {
+        self.inner.profile().mic_volume.is_some()
     }
 
     /// Valid DPI range as (min, max, step), for devices with configurable DPI.
@@ -107,6 +122,14 @@ impl Device {
 
     pub fn set_sidetone(&self, level: u8) -> Result<()> {
         self.inner.set_sidetone(level)
+    }
+
+    pub fn set_mic_mute_led_brightness(&self, level: u8) -> Result<()> {
+        self.inner.set_mic_mute_led_brightness(level)
+    }
+
+    pub fn set_mic_volume(&self, level: u8) -> Result<()> {
+        self.inner.set_mic_volume(level)
     }
 }
 
@@ -179,6 +202,8 @@ pub struct DeviceSummary {
     pub supports_polling_rate: bool,
     pub supports_button_mapping: bool,
     pub supports_sidetone: bool,
+    pub supports_mic_mute_led: bool,
+    pub supports_mic_volume: bool,
     pub dpi_range: Option<(u16, u16, u16)>,
     pub connection_type: ConnectionType,
     pub battery: Option<BatteryStatus>,
@@ -215,6 +240,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_polling_rate: false,
                     supports_button_mapping: false,
                     supports_sidetone: false,
+                    supports_mic_mute_led: false,
+                    supports_mic_volume: false,
                     dpi_range: None,
                     connection_type,
                     battery: None,
@@ -230,6 +257,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     let supports_polling_rate = device.supports_polling_rate();
                     let supports_button_mapping = device.supports_button_mapping();
                     let supports_sidetone = device.supports_sidetone();
+                    let supports_mic_mute_led = device.supports_mic_mute_led();
+                    let supports_mic_volume = device.supports_mic_volume();
                     let dpi_range = device.dpi_range();
                     let supports_chatmix = device.supports_chatmix();
                     let chatmix_result = supports_chatmix.then(|| device.chatmix_status());
@@ -243,6 +272,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_polling_rate,
                             supports_button_mapping,
                             supports_sidetone,
+                            supports_mic_mute_led,
+                            supports_mic_volume,
                             dpi_range,
                             connection_type,
                             battery: Some(status),
@@ -261,6 +292,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_polling_rate,
                             supports_button_mapping,
                             supports_sidetone,
+                            supports_mic_mute_led,
+                            supports_mic_volume,
                             dpi_range,
                             connection_type,
                             battery: None,
@@ -280,6 +313,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_polling_rate: false,
                     supports_button_mapping: false,
                     supports_sidetone: false,
+                    supports_mic_mute_led: false,
+                    supports_mic_volume: false,
                     dpi_range: None,
                     connection_type,
                     battery: None,
@@ -370,5 +405,13 @@ mod tests {
     fn arctis_nova_7_profile_declares_sidetone_but_rival3_does_not() {
         assert!(ARCTIS_NOVA_7_PROFILE.sidetone.is_some());
         assert!(RIVAL3_WIRELESS_PROFILE.sidetone.is_none());
+    }
+
+    #[test]
+    fn arctis_nova_7_profile_declares_mic_mute_led_and_mic_volume_but_rival3_does_not() {
+        assert!(ARCTIS_NOVA_7_PROFILE.mic_mute_led.is_some());
+        assert!(ARCTIS_NOVA_7_PROFILE.mic_volume.is_some());
+        assert!(RIVAL3_WIRELESS_PROFILE.mic_mute_led.is_none());
+        assert!(RIVAL3_WIRELESS_PROFILE.mic_volume.is_none());
     }
 }

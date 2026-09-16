@@ -35,6 +35,12 @@ pub mod commands {
     /// Set sidetone (mic monitoring) level
     pub const SIDETONE: u8 = 0x39;
 
+    /// Set microphone-mute LED brightness
+    pub const MIC_MUTE_LED_BRIGHTNESS: u8 = 0xae;
+
+    /// Set microphone input volume
+    pub const MIC_VOLUME: u8 = 0x37;
+
     /// Set DPI/sensitivity
     pub const SENSITIVITY: u8 = 0x20;
 

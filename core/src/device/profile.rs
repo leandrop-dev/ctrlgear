@@ -11,8 +11,9 @@
 
 use crate::buttons::ButtonMapping;
 use crate::device::{
-    ChatMixReadable, ConfigurableButtons, ConfigurableDpi, ConfigurablePollingRate,
-    ConfigurableSidetone, SteelSeriesDevice, WirelessDevice,
+    ChatMixReadable, ConfigurableButtons, ConfigurableDpi, ConfigurableMicMuteLed,
+    ConfigurableMicVolume, ConfigurablePollingRate, ConfigurableSidetone, SteelSeriesDevice,
+    WirelessDevice,
 };
 use crate::hid::SteelSeriesHid;
 use crate::protocol::{self, BatteryStatus, ChatMixStatus, PollingRate, ReportType};
@@ -81,6 +82,20 @@ pub struct SidetoneProfile {
     pub command: u8,
 }
 
+/// Data needed to set microphone-mute LED brightness: just the command byte,
+/// since the 0-3 (off to max) level range is shared across devices.
+#[derive(Clone, Copy)]
+pub struct MicMuteLedProfile {
+    pub command: u8,
+}
+
+/// Data needed to set microphone input volume: just the command byte, since
+/// the 0-7 (off to max) level range is shared across devices.
+#[derive(Clone, Copy)]
+pub struct MicVolumeProfile {
+    pub command: u8,
+}
+
 /// Declarative description of one SteelSeries device: its HID identity plus
 /// one `Option<XyzProfile>` per capability it supports. `None` means the
 /// device doesn't have that capability — the corresponding [`ProfiledDevice`]
@@ -100,6 +115,8 @@ pub struct DeviceProfile {
     pub polling_rate: Option<PollingRateProfile>,
     pub buttons: Option<ButtonsProfile>,
     pub sidetone: Option<SidetoneProfile>,
+    pub mic_mute_led: Option<MicMuteLedProfile>,
+    pub mic_volume: Option<MicVolumeProfile>,
 }
 
 impl DeviceProfile {
@@ -121,6 +138,8 @@ impl DeviceProfile {
         polling_rate: None,
         buttons: None,
         sidetone: None,
+        mic_mute_led: None,
+        mic_volume: None,
     };
 }
 
@@ -304,6 +323,50 @@ impl ConfigurableSidetone for ProfiledDevice {
     }
 }
 
+/// Validates a mic mute LED brightness level is in the 0-3 (off to max)
+/// range, factored out as a plain function so it's testable without a live
+/// HID handle — mirrors `validate_sidetone_level`'s standalone-function shape.
+fn validate_mic_mute_led_level(level: u8) -> Result<()> {
+    if level > 3 {
+        return Err(Error::InvalidParameter(
+            "Mic mute LED brightness must be 0-3".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+impl ConfigurableMicMuteLed for ProfiledDevice {
+    fn set_mic_mute_led_brightness(&self, level: u8) -> Result<()> {
+        validate_mic_mute_led_level(level)?;
+        let mic_mute_led = require_capability!(self, mic_mute_led, "configurable mic mute LED");
+        self.hid
+            .write_command(ReportType::Output, &[mic_mute_led.command, level], None)?;
+        Ok(())
+    }
+}
+
+/// Validates a mic volume level is in the 0-7 (off to max) range, factored
+/// out as a plain function so it's testable without a live HID handle —
+/// mirrors `validate_sidetone_level`'s standalone-function shape.
+fn validate_mic_volume_level(level: u8) -> Result<()> {
+    if level > 7 {
+        return Err(Error::InvalidParameter(
+            "Mic volume must be 0-7".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+impl ConfigurableMicVolume for ProfiledDevice {
+    fn set_mic_volume(&self, level: u8) -> Result<()> {
+        validate_mic_volume_level(level)?;
+        let mic_volume = require_capability!(self, mic_volume, "configurable mic volume");
+        self.hid
+            .write_command(ReportType::Output, &[mic_volume.command, level], None)?;
+        Ok(())
+    }
+}
+
 impl ProfiledDevice {
     /// Sends `[command]` (plus `extra_byte`, if any), reads back
     /// `readback_length` bytes, and hands the response to `parse`. Shared by
@@ -437,6 +500,8 @@ mod tests {
             polling_rate: None,
             buttons: None,
             sidetone: None,
+            mic_mute_led: None,
+            mic_volume: None,
         };
 
         const TRAIT_DEFAULT_RANGE: (u16, u16, u16) = (100, 18000, 100);
@@ -461,6 +526,8 @@ mod tests {
             polling_rate: None,
             buttons: None,
             sidetone: None,
+            mic_mute_led: None,
+            mic_volume: None,
         };
 
         assert_eq!(dpi_range_for(&TEST_PROFILE), (0, 0, 0));
@@ -479,6 +546,38 @@ mod tests {
     fn set_sidetone_accepts_level_0_to_3() {
         for level in 0..=3 {
             assert!(validate_sidetone_level(level).is_ok());
+        }
+    }
+
+    #[test]
+    fn set_mic_mute_led_rejects_level_above_3() {
+        assert!(validate_mic_mute_led_level(4).is_err());
+        assert!(matches!(
+            validate_mic_mute_led_level(4),
+            Err(Error::InvalidParameter(_))
+        ));
+    }
+
+    #[test]
+    fn set_mic_mute_led_accepts_level_0_to_3() {
+        for level in 0..=3 {
+            assert!(validate_mic_mute_led_level(level).is_ok());
+        }
+    }
+
+    #[test]
+    fn set_mic_volume_rejects_level_above_7() {
+        assert!(validate_mic_volume_level(8).is_err());
+        assert!(matches!(
+            validate_mic_volume_level(8),
+            Err(Error::InvalidParameter(_))
+        ));
+    }
+
+    #[test]
+    fn set_mic_volume_accepts_level_0_to_7() {
+        for level in 0..=7 {
+            assert!(validate_mic_volume_level(level).is_ok());
         }
     }
 }

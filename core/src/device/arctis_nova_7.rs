@@ -1,8 +1,8 @@
 //! SteelSeries Arctis Nova 7 Wireless headset profile data.
 //!
-//! Battery, chatmix (game/chat volume balance) and sidetone only: this
-//! headset has no DPI/polling-rate/button concepts, so its [`DeviceProfile`]
-//! leaves those fields `None` —
+//! Battery, chatmix (game/chat volume balance), sidetone, mic-mute-LED
+//! brightness and mic volume only: this headset has no DPI/polling-rate/
+//! button concepts, so its [`DeviceProfile`] leaves those fields `None` —
 //! [`crate::device::profile::ProfiledDevice`] returns [`Error::Unsupported`]
 //! for them generically.
 //!
@@ -17,7 +17,10 @@
 //! discrete 0-4 level requiring a different mapping to percent — out of
 //! scope until that variant needs support.
 
-use crate::device::profile::{BatteryProfile, ChatMixProfile, DeviceProfile, SidetoneProfile};
+use crate::device::profile::{
+    BatteryProfile, ChatMixProfile, DeviceProfile, MicMuteLedProfile, MicVolumeProfile,
+    SidetoneProfile,
+};
 use crate::protocol::{commands, BatteryStatus, ChatMixStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
 
@@ -112,6 +115,12 @@ pub const ARCTIS_NOVA_7_PROFILE: DeviceProfile = DeviceProfile {
     }),
     sidetone: Some(SidetoneProfile {
         command: commands::SIDETONE,
+    }),
+    mic_mute_led: Some(MicMuteLedProfile {
+        command: commands::MIC_MUTE_LED_BRIGHTNESS,
+    }),
+    mic_volume: Some(MicVolumeProfile {
+        command: commands::MIC_VOLUME,
     }),
     ..DeviceProfile::NONE
 };

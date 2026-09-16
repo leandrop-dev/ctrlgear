@@ -180,6 +180,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window.set_dpi_input("400,800,1600".into());
             window.set_polling_rate_index(3);
             window.set_sidetone_index(0);
+            window.set_mic_mute_led_index(0);
+            window.set_mic_volume_index(0);
             window.set_button_mapping_index_0(4);
             window.set_button_mapping_index_1(4);
             window.set_button_mapping_index_2(4);
@@ -253,6 +255,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             match apply_sidetone(product_id, index) {
                 Ok(()) => {
                     window.set_detail_status("Sidetone applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_mic_mute_led(move |index| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_mic_mute_led_brightness(product_id, index) {
+                Ok(()) => {
+                    window.set_detail_status("Mic mute LED brightness applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_mic_volume(move |index| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_mic_volume(product_id, index) {
+                Ok(()) => {
+                    window.set_detail_status("Mic volume applied.".into());
                     window.set_detail_status_color(STATUS_COLOR_OK);
                 }
                 Err(e) => {
@@ -379,6 +425,8 @@ fn apply_detail_summary(window: &MainWindow, summary: &DeviceSummary) {
     window.set_detail_supports_polling_rate(summary.supports_polling_rate);
     window.set_detail_supports_button_mapping(summary.supports_button_mapping);
     window.set_detail_supports_sidetone(summary.supports_sidetone);
+    window.set_detail_supports_mic_mute_led(summary.supports_mic_mute_led);
+    window.set_detail_supports_mic_volume(summary.supports_mic_volume);
     window.set_detail_dpi_help(dpi_help_text(summary.dpi_range).into());
     window.set_detail_has_battery(summary.battery.is_some());
     window.set_detail_battery_percent(summary.battery.map(|b| b.level).unwrap_or(0) as i32);
@@ -575,6 +623,8 @@ mod tests {
             supports_polling_rate: false,
             supports_button_mapping: false,
             supports_sidetone: false,
+            supports_mic_mute_led: false,
+            supports_mic_volume: false,
             dpi_range: None,
             connection_type: ConnectionType::Unknown,
             battery,
@@ -654,6 +704,8 @@ mod tests {
             supports_polling_rate: false,
             supports_button_mapping: false,
             supports_sidetone: false,
+            supports_mic_mute_led: false,
+            supports_mic_volume: false,
             dpi_range: None,
             connection_type: ConnectionType::Unknown,
             battery,
@@ -842,6 +894,20 @@ fn apply_sidetone(product_id: u16, index: i32) -> ctrlgear_core::Result<()> {
     let api = hidapi::HidApi::new()?;
     let device = registry::open(&api, product_id)?;
     device.set_sidetone(level)
+}
+
+fn apply_mic_mute_led_brightness(product_id: u16, index: i32) -> ctrlgear_core::Result<()> {
+    let level = index.clamp(0, 3) as u8;
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_mic_mute_led_brightness(level)
+}
+
+fn apply_mic_volume(product_id: u16, index: i32) -> ctrlgear_core::Result<()> {
+    let level = index.clamp(0, 7) as u8;
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_mic_volume(level)
 }
 
 /// Keyword order matches the `ComboBox` `model` in `gui/ui/main.slint`'s

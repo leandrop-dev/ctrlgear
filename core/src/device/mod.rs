@@ -53,6 +53,18 @@ pub trait ConfigurableSidetone {
     fn set_sidetone(&self, level: u8) -> Result<()>;
 }
 
+/// Common interface for headsets with an adjustable microphone-mute LED
+pub trait ConfigurableMicMuteLed {
+    /// Brightness level 0 (off) to 3 (max)
+    fn set_mic_mute_led_brightness(&self, level: u8) -> Result<()>;
+}
+
+/// Common interface for headsets with adjustable microphone input volume
+pub trait ConfigurableMicVolume {
+    /// Volume level 0 (off) to 7 (max)
+    fn set_mic_volume(&self, level: u8) -> Result<()>;
+}
+
 /// Common interface for wireless devices
 pub trait WirelessDevice {
     /// Get battery status

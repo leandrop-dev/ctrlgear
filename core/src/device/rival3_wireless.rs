@@ -95,4 +95,6 @@ pub const RIVAL3_WIRELESS_PROFILE: DeviceProfile = DeviceProfile {
         command: commands::BUTTON_MAPPING,
     }),
     sidetone: None,
+    mic_mute_led: None,
+    mic_volume: None,
 };

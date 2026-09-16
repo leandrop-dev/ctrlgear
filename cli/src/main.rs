@@ -1,6 +1,5 @@
 use clap::{Parser, Subcommand};
 use ctrlgear_core::buttons::ButtonMapping;
-use ctrlgear_core::device::rival3_wireless::PRODUCT_ID;
 use ctrlgear_core::protocol::STEELSERIES_VENDOR_ID;
 use ctrlgear_core::registry;
 
@@ -36,6 +35,16 @@ enum Commands {
         /// Sidetone level: 0 (Off), 1 (Low), 2 (Medium), or 3 (High)
         level: u8,
     },
+    /// Set microphone-mute LED brightness
+    MicMuteLed {
+        /// Brightness level: 0 (Off) to 3 (max)
+        level: u8,
+    },
+    /// Set microphone input volume
+    MicVolume {
+        /// Volume level: 0 (Off) to 7 (max)
+        level: u8,
+    },
     /// Get battery status (wireless devices only)
     Battery,
     /// Save current settings to device memory
@@ -57,8 +66,20 @@ fn main() -> anyhow::Result<()> {
         return list_devices(&api);
     }
 
-    // Open Rival 3 Wireless device
-    let device = registry::open(&api, PRODUCT_ID)?;
+    // Open the first connected device whose profile supports the requested capability, rather
+    // than assuming a single hardcoded product — SteelSeries devices span multiple product
+    // families with disjoint capability sets (e.g. DPI is mouse-only, sidetone is headset-only).
+    let device = match &cli.command {
+        Commands::Dpi { .. } => open_matching(&api, |d| d.supports_dpi())?,
+        Commands::PollingRate { .. } => open_matching(&api, |d| d.supports_polling_rate())?,
+        Commands::Buttons { .. } => open_matching(&api, |d| d.supports_button_mapping())?,
+        Commands::Sidetone { .. } => open_matching(&api, |d| d.supports_sidetone())?,
+        Commands::MicMuteLed { .. } => open_matching(&api, |d| d.supports_mic_mute_led())?,
+        Commands::MicVolume { .. } => open_matching(&api, |d| d.supports_mic_volume())?,
+        Commands::Battery => open_matching(&api, |d| d.supports_battery())?,
+        Commands::Save | Commands::Info => open_matching(&api, |_| true)?,
+        Commands::ListDevices => unreachable!(), // Handled before device opening
+    };
 
     match cli.command {
         Commands::Dpi { values } => {
@@ -79,6 +100,14 @@ fn main() -> anyhow::Result<()> {
         Commands::Sidetone { level } => {
             device.set_sidetone(level)?;
             println!("Set sidetone level to: {}", level);
+        }
+        Commands::MicMuteLed { level } => {
+            device.set_mic_mute_led_brightness(level)?;
+            println!("Set mic mute LED brightness to: {}", level);
+        }
+        Commands::MicVolume { level } => {
+            device.set_mic_volume(level)?;
+            println!("Set mic volume to: {}", level);
         }
         Commands::Buttons { mapping } => {
             let button_mapping = ButtonMapping::from_string(&mapping)?;
@@ -104,6 +133,26 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Opens the first connected device (across every product ID declared by any
+/// `registry::PROFILES` entry) whose capabilities satisfy `predicate`. SteelSeries devices span
+/// multiple product families with disjoint capability sets (e.g. DPI is mouse-only, sidetone is
+/// headset-only), so a single hardcoded product ID can't serve every subcommand.
+fn open_matching(
+    api: &hidapi::HidApi,
+    predicate: impl Fn(&registry::Device) -> bool,
+) -> anyhow::Result<registry::Device> {
+    for profile in registry::PROFILES {
+        for &product_id in profile.product_ids {
+            if let Ok(device) = registry::open(api, product_id) {
+                if predicate(&device) {
+                    return Ok(device);
+                }
+            }
+        }
+    }
+    anyhow::bail!("No connected device supports this command")
 }
 
 fn list_devices(api: &hidapi::HidApi) -> anyhow::Result<()> {
