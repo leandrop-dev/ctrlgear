@@ -6,12 +6,12 @@
 //! for examples) and listing it in [`PROFILES`] — nowhere else.
 
 use crate::device::arctis_nova_7::{
-    ARCTIS_NOVA_7_PROFILE, PRODUCT_ID as ARCTIS_NOVA_7_PRODUCT_ID,
+    self, ARCTIS_NOVA_7_DISCRETE_BATTERY_PROFILE, ARCTIS_NOVA_7_PROFILE,
     WIRED_PRODUCT_ID as ARCTIS_NOVA_7_WIRED_PRODUCT_ID,
 };
 use crate::device::profile::{DeviceProfile, ProfiledDevice};
 use crate::device::rival3_wireless::{RIVAL3_WIRELESS_PROFILE, PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID};
-use crate::device::{ChatMixReadable, ConfigurableButtons, ConfigurableDpi, ConfigurableMicMuteLed, ConfigurableMicVolume, ConfigurablePollingRate, ConfigurableSidetone, SteelSeriesDevice, WirelessDevice};
+use crate::device::{ChatMixReadable, ConfigurableBluetooth, ConfigurableButtons, ConfigurableDpi, ConfigurableEqualizer, ConfigurableMicMuteLed, ConfigurableMicVolume, ConfigurablePollingRate, ConfigurableSidetone, ConfigurableSleepTimer, ConfigurableVolumeLimiter, SteelSeriesDevice, WirelessDevice};
 use crate::hid::SteelSeriesHid;
 use crate::protocol::{BatteryStatus, ChatMixStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
@@ -20,7 +20,11 @@ use hidapi::HidApi;
 /// Every known device profile, matched by product ID in [`open`],
 /// [`is_supported`] and [`discover`]. Adding a device family means adding
 /// its `const DeviceProfile` here.
-pub const PROFILES: &[DeviceProfile] = &[RIVAL3_WIRELESS_PROFILE, ARCTIS_NOVA_7_PROFILE];
+pub const PROFILES: &[DeviceProfile] = &[
+    RIVAL3_WIRELESS_PROFILE,
+    ARCTIS_NOVA_7_PROFILE,
+    ARCTIS_NOVA_7_DISCRETE_BATTERY_PROFILE,
+];
 
 /// Looks up the profile claiming `product_id`, if any.
 fn profile_for(product_id: u16) -> Option<&'static DeviceProfile> {
@@ -57,6 +61,10 @@ impl Device {
 
     pub fn chatmix_status(&self) -> Result<ChatMixStatus> {
         self.inner.chatmix_status()
+    }
+
+    pub fn firmware_version(&self) -> Result<String> {
+        self.inner.firmware_version()
     }
 
     /// Whether this device has a configurable DPI (mice only).
@@ -99,6 +107,31 @@ impl Device {
         self.inner.profile().mic_volume.is_some()
     }
 
+    /// Whether this device has a configurable equalizer (headsets only).
+    pub fn supports_equalizer(&self) -> bool {
+        self.inner.profile().equalizer.is_some()
+    }
+
+    /// Whether this device has a configurable sleep timer (wireless devices only).
+    pub fn supports_sleep_timer(&self) -> bool {
+        self.inner.profile().sleep_timer.is_some()
+    }
+
+    /// Whether this device has a configurable volume limiter (headsets only).
+    pub fn supports_volume_limiter(&self) -> bool {
+        self.inner.profile().volume_limiter.is_some()
+    }
+
+    /// Whether this device has configurable Bluetooth settings (headsets only).
+    pub fn supports_bluetooth_settings(&self) -> bool {
+        self.inner.profile().bluetooth.is_some()
+    }
+
+    /// Number of adjustable equalizer bands, for devices with a configurable equalizer.
+    pub fn equalizer_bands(&self) -> usize {
+        self.inner.equalizer_bands()
+    }
+
     /// Valid DPI range as (min, max, step), for devices with configurable DPI.
     pub fn dpi_range(&self) -> Option<(u16, u16, u16)> {
         if self.inner.profile().dpi.is_some() {
@@ -131,6 +164,30 @@ impl Device {
     pub fn set_mic_volume(&self, level: u8) -> Result<()> {
         self.inner.set_mic_volume(level)
     }
+
+    pub fn set_equalizer(&self, bands: &[f32]) -> Result<()> {
+        self.inner.set_equalizer(bands)
+    }
+
+    pub fn set_equalizer_preset(&self, preset: u8) -> Result<()> {
+        self.inner.set_equalizer_preset(preset)
+    }
+
+    pub fn set_sleep_timer(&self, minutes: u8) -> Result<()> {
+        self.inner.set_sleep_timer(minutes)
+    }
+
+    pub fn set_volume_limiter(&self, enabled: bool) -> Result<()> {
+        self.inner.set_volume_limiter(enabled)
+    }
+
+    pub fn set_bluetooth_when_powered_on(&self, enabled: bool) -> Result<()> {
+        self.inner.set_bluetooth_when_powered_on(enabled)
+    }
+
+    pub fn set_bluetooth_call_volume(&self, mode: u8) -> Result<()> {
+        self.inner.set_bluetooth_call_volume(mode)
+    }
 }
 
 /// How a device is physically reached. A device that can be reached over
@@ -155,11 +212,18 @@ pub enum ConnectionType {
 fn connection_type_for(bus: hidapi::BusType, product_id: u16) -> ConnectionType {
     match bus {
         hidapi::BusType::Bluetooth => ConnectionType::Bluetooth,
-        hidapi::BusType::Usb => match product_id {
-            ARCTIS_NOVA_7_WIRED_PRODUCT_ID => ConnectionType::UsbWired,
-            RIVAL3_WIRELESS_PRODUCT_ID | ARCTIS_NOVA_7_PRODUCT_ID => ConnectionType::Dongle24Ghz,
-            _ => ConnectionType::Unknown,
-        },
+        hidapi::BusType::Usb => {
+            if product_id == ARCTIS_NOVA_7_WIRED_PRODUCT_ID {
+                ConnectionType::UsbWired
+            } else if product_id == RIVAL3_WIRELESS_PRODUCT_ID
+                || arctis_nova_7::PERCENTAGE_BATTERY_PRODUCT_IDS.contains(&product_id)
+                || arctis_nova_7::DISCRETE_BATTERY_PRODUCT_IDS.contains(&product_id)
+            {
+                ConnectionType::Dongle24Ghz
+            } else {
+                ConnectionType::Unknown
+            }
+        }
         _ => ConnectionType::Unknown,
     }
 }
@@ -204,6 +268,10 @@ pub struct DeviceSummary {
     pub supports_sidetone: bool,
     pub supports_mic_mute_led: bool,
     pub supports_mic_volume: bool,
+    pub supports_equalizer: bool,
+    pub supports_sleep_timer: bool,
+    pub supports_volume_limiter: bool,
+    pub supports_bluetooth_settings: bool,
     pub dpi_range: Option<(u16, u16, u16)>,
     pub connection_type: ConnectionType,
     pub battery: Option<BatteryStatus>,
@@ -242,6 +310,10 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_sidetone: false,
                     supports_mic_mute_led: false,
                     supports_mic_volume: false,
+                    supports_equalizer: false,
+                    supports_sleep_timer: false,
+                    supports_volume_limiter: false,
+                    supports_bluetooth_settings: false,
                     dpi_range: None,
                     connection_type,
                     battery: None,
@@ -259,6 +331,10 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     let supports_sidetone = device.supports_sidetone();
                     let supports_mic_mute_led = device.supports_mic_mute_led();
                     let supports_mic_volume = device.supports_mic_volume();
+                    let supports_equalizer = device.supports_equalizer();
+                    let supports_sleep_timer = device.supports_sleep_timer();
+                    let supports_volume_limiter = device.supports_volume_limiter();
+                    let supports_bluetooth_settings = device.supports_bluetooth_settings();
                     let dpi_range = device.dpi_range();
                     let supports_chatmix = device.supports_chatmix();
                     let chatmix_result = supports_chatmix.then(|| device.chatmix_status());
@@ -274,6 +350,10 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_sidetone,
                             supports_mic_mute_led,
                             supports_mic_volume,
+                            supports_equalizer,
+                            supports_sleep_timer,
+                            supports_volume_limiter,
+                            supports_bluetooth_settings,
                             dpi_range,
                             connection_type,
                             battery: Some(status),
@@ -294,6 +374,10 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_sidetone,
                             supports_mic_mute_led,
                             supports_mic_volume,
+                            supports_equalizer,
+                            supports_sleep_timer,
+                            supports_volume_limiter,
+                            supports_bluetooth_settings,
                             dpi_range,
                             connection_type,
                             battery: None,
@@ -315,6 +399,10 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_sidetone: false,
                     supports_mic_mute_led: false,
                     supports_mic_volume: false,
+                    supports_equalizer: false,
+                    supports_sleep_timer: false,
+                    supports_volume_limiter: false,
+                    supports_bluetooth_settings: false,
                     dpi_range: None,
                     connection_type,
                     battery: None,
@@ -329,6 +417,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::device::arctis_nova_7::PRODUCT_ID as ARCTIS_NOVA_7_PRODUCT_ID;
 
     #[test]
     fn connection_type_for_bluetooth_bus_is_always_bluetooth() {
@@ -413,5 +502,21 @@ mod tests {
         assert!(ARCTIS_NOVA_7_PROFILE.mic_volume.is_some());
         assert!(RIVAL3_WIRELESS_PROFILE.mic_mute_led.is_none());
         assert!(RIVAL3_WIRELESS_PROFILE.mic_volume.is_none());
+    }
+
+    #[test]
+    fn arctis_nova_7_profile_declares_equalizer_but_rival3_does_not() {
+        assert!(ARCTIS_NOVA_7_PROFILE.equalizer.is_some());
+        assert!(RIVAL3_WIRELESS_PROFILE.equalizer.is_none());
+    }
+
+    #[test]
+    fn arctis_nova_7_profile_declares_sleep_timer_volume_limiter_and_bluetooth_but_rival3_does_not() {
+        assert!(ARCTIS_NOVA_7_PROFILE.sleep_timer.is_some());
+        assert!(ARCTIS_NOVA_7_PROFILE.volume_limiter.is_some());
+        assert!(ARCTIS_NOVA_7_PROFILE.bluetooth.is_some());
+        assert!(RIVAL3_WIRELESS_PROFILE.sleep_timer.is_none());
+        assert!(RIVAL3_WIRELESS_PROFILE.volume_limiter.is_none());
+        assert!(RIVAL3_WIRELESS_PROFILE.bluetooth.is_none());
     }
 }

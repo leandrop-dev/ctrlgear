@@ -26,6 +26,13 @@ pub trait SteelSeriesDevice {
             "Reset not supported for this device".to_string(),
         ))
     }
+
+    /// Read the device's firmware version, if supported
+    fn firmware_version(&self) -> Result<String> {
+        Err(crate::Error::Unsupported(
+            "Firmware version not supported for this device".to_string(),
+        ))
+    }
 }
 
 /// Common interface for mice with configurable DPI
@@ -63,6 +70,36 @@ pub trait ConfigurableMicMuteLed {
 pub trait ConfigurableMicVolume {
     /// Volume level 0 (off) to 7 (max)
     fn set_mic_volume(&self, level: u8) -> Result<()>;
+}
+
+/// Common interface for headsets with a configurable multi-band equalizer
+pub trait ConfigurableEqualizer {
+    /// Number of adjustable bands
+    fn equalizer_bands(&self) -> usize;
+    /// Set gain (dB) for each band; length must equal `equalizer_bands()`
+    fn set_equalizer(&self, bands: &[f32]) -> Result<()>;
+    /// Apply a built-in preset by index (device-specific count and meaning)
+    fn set_equalizer_preset(&self, preset: u8) -> Result<()>;
+}
+
+/// Common interface for wireless devices with a configurable auto-sleep timer. Called "sleep
+/// timer" in this project's user-facing terminology, matching how the underlying setting
+/// ("inactive time" in the reference source) is presented to the user.
+pub trait ConfigurableSleepTimer {
+    /// Minutes of inactivity before the device sleeps; 0-255
+    fn set_sleep_timer(&self, minutes: u8) -> Result<()>;
+}
+
+/// Common interface for headsets with a togglable output volume limiter
+pub trait ConfigurableVolumeLimiter {
+    fn set_volume_limiter(&self, enabled: bool) -> Result<()>;
+}
+
+/// Common interface for headsets with configurable Bluetooth behavior
+pub trait ConfigurableBluetooth {
+    fn set_bluetooth_when_powered_on(&self, enabled: bool) -> Result<()>;
+    /// Call-volume mode: 0 = do nothing, 1 = lower game volume by 12dB, 2 = mute game during calls
+    fn set_bluetooth_call_volume(&self, mode: u8) -> Result<()>;
 }
 
 /// Common interface for wireless devices

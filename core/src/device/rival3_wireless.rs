@@ -5,7 +5,8 @@
 //! command-building/response-parsing logic this data drives.
 
 use crate::device::profile::{
-    BatteryProfile, ButtonsProfile, DeviceProfile, DpiProfile, PollingRateProfile,
+    BatteryProfile, ButtonsProfile, DeviceProfile, DpiProfile, FirmwareVersionProfile,
+    PollingRateProfile,
 };
 use crate::protocol::{commands, BatteryStatus, STEELSERIES_VENDOR_ID};
 use crate::{Error, Result};
@@ -69,6 +70,19 @@ fn parse_battery(data: &[u8]) -> Result<BatteryStatus> {
         .ok_or_else(|| Error::InvalidParameter("Invalid battery status response".to_string()))
 }
 
+/// Formats the 2-byte firmware-version response as "major.minor". This ordering/format is
+/// an assumption (major byte first, minor byte second) not independently re-verified against
+/// rivalcfg's actual CLI display this session — correct if it turns out wrong once tested
+/// against real hardware.
+pub(crate) fn parse_firmware_version(response: &[u8]) -> Result<String> {
+    if response.len() < 2 {
+        return Err(Error::InvalidParameter(
+            "Invalid firmware version response".to_string(),
+        ));
+    }
+    Ok(format!("{}.{}", response[0], response[1]))
+}
+
 /// SteelSeries Rival 3 Wireless device profile.
 pub const RIVAL3_WIRELESS_PROFILE: DeviceProfile = DeviceProfile {
     name: "SteelSeries Rival 3 Wireless",
@@ -97,4 +111,14 @@ pub const RIVAL3_WIRELESS_PROFILE: DeviceProfile = DeviceProfile {
     sidetone: None,
     mic_mute_led: None,
     mic_volume: None,
+    equalizer: None,
+    sleep_timer: None,
+    volume_limiter: None,
+    bluetooth: None,
+    firmware_version: Some(FirmwareVersionProfile {
+        command: commands::FIRMWARE_VERSION,
+        extra_byte: Some(0x00),
+        readback_length: 2,
+        parse: parse_firmware_version,
+    }),
 };

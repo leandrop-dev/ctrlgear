@@ -16,6 +16,7 @@ ctrlgear-core = { path = "../core" }
 dirs = "7.0.0"
 hidapi = "2.6"
 notify-rust = "4.18.0"
+pipewire = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
 slint = "1.17.1"
 toml = "1.1.6"

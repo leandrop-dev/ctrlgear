@@ -24,7 +24,7 @@ pub mod commands {
     pub const SAVE: u8 = 0x09;
 
     /// Get firmware version
-    pub const FIRMWARE_VERSION: u8 = 0x10;
+    pub const FIRMWARE_VERSION: u8 = 0x90;
 
     /// Set polling rate
     pub const POLLING_RATE: u8 = 0x17;
@@ -46,6 +46,26 @@ pub mod commands {
 
     /// Get battery level (wireless devices)
     pub const BATTERY_LEVEL: u8 = 0xAA;
+
+    /// Set 10-band equalizer gains
+    pub const EQUALIZER: u8 = 0x33;
+
+    /// Set auto-sleep (inactive time) timer, in minutes
+    pub const SLEEP_TIMER: u8 = 0xa3;
+
+    /// Toggle the output volume limiter
+    pub const VOLUME_LIMITER: u8 = 0x3a;
+
+    /// Toggle Bluetooth-when-powered-on
+    pub const BLUETOOTH_POWER_ON: u8 = 0xb2;
+
+    /// Set Bluetooth call-volume mode
+    pub const BLUETOOTH_CALL_VOLUME: u8 = 0xb3;
+
+    /// Save Bluetooth settings to device memory; distinct from the general
+    /// single-byte [`SAVE`], required specifically after setting
+    /// Bluetooth-when-powered-on
+    pub const BLUETOOTH_SAVE: [u8; 2] = [0x06, 0x09];
 }
 
 /// Polling rate options

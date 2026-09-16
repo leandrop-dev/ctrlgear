@@ -33,6 +33,8 @@ pub struct Settings {
     pub notification_persistent: bool,
     #[serde(default)]
     pub notification_sound: SoundChoice,
+    #[serde(default)]
+    pub chatmix_sinks_enabled: bool,
 }
 
 impl Default for Settings {
@@ -42,6 +44,7 @@ impl Default for Settings {
             tray_icon_style: TrayIconStyle::default(),
             notification_persistent: false,
             notification_sound: SoundChoice::default(),
+            chatmix_sinks_enabled: false,
         }
     }
 }
@@ -151,6 +154,23 @@ mod tests {
         assert_eq!(settings.poll_interval_minutes, 15);
         assert_eq!(settings.tray_icon_style, TrayIconStyle::default());
         assert_eq!(settings.notification_sound, SoundChoice::default());
+        assert_eq!(settings.chatmix_sinks_enabled, false);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_then_load_round_trips_chatmix_sinks_enabled() {
+        let dir = std::env::temp_dir().join("ctrlgear-test-config-chatmix-sinks-enabled");
+        let path = dir.join("config.toml");
+
+        save_to(
+            Some(path.clone()),
+            &Settings { chatmix_sinks_enabled: true, ..Default::default() },
+        )
+        .unwrap();
+        let settings = load_from(Some(path.clone()));
+
+        assert_eq!(settings.chatmix_sinks_enabled, true);
         let _ = std::fs::remove_file(&path);
     }
 }

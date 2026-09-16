@@ -271,6 +271,10 @@ component DeviceDetailPage inherits Rectangle {
     in property <bool> supports-sidetone;
     in property <bool> supports-mic-mute-led;
     in property <bool> supports-mic-volume;
+    in property <bool> supports-equalizer;
+    in property <bool> supports-sleep-timer;
+    in property <bool> supports-volume-limiter;
+    in property <bool> supports-bluetooth-settings;
     in property <bool> has-battery;
     in property <int> battery-percent;
     in property <bool> charging;
@@ -285,6 +289,10 @@ component DeviceDetailPage inherits Rectangle {
     in-out property <int> sidetone-index: 0;
     in-out property <int> mic-mute-led-index: 0;
     in-out property <int> mic-volume-index: 0;
+    in-out property <int> sleep-timer-minutes: 0;
+    in-out property <bool> volume-limiter-enabled: false;
+    in-out property <bool> bluetooth-power-on-enabled: false;
+    in-out property <int> bluetooth-call-volume-index: 0;
     in-out property <int> button-mapping-index-0: 4;
     in-out property <int> button-mapping-index-1: 4;
     in-out property <int> button-mapping-index-2: 4;
@@ -297,6 +305,11 @@ component DeviceDetailPage inherits Rectangle {
     callback apply-sidetone(int);
     callback apply-mic-mute-led(int);
     callback apply-mic-volume(int);
+    callback apply-equalizer-preset(int);
+    callback apply-sleep-timer(int);
+    callback apply-volume-limiter(bool);
+    callback apply-bluetooth-power-on(bool);
+    callback apply-bluetooth-call-volume(int);
     callback apply-button-mapping([int]);
 
     ScrollView {
@@ -440,6 +453,102 @@ component DeviceDetailPage inherits Rectangle {
                 }
             }
 
+            if supported && supports-equalizer: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "Equalizer presets"; font-weight: 700; font-size: 13px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Button { text: "Flat"; clicked => { root.apply-equalizer-preset(0); } }
+                        Button { text: "Bass"; clicked => { root.apply-equalizer-preset(1); } }
+                        Button { text: "Focus"; clicked => { root.apply-equalizer-preset(2); } }
+                        Button { text: "Smiley"; clicked => { root.apply-equalizer-preset(3); } }
+                    }
+                    Text {
+                        text: "Applies on the headset itself, independent of any PipeWire-side equalizer (the two stack rather than conflict).";
+                        font-size: 11px;
+                        wrap: word-wrap;
+                        color: Palette.foreground.with-alpha(0.55);
+                    }
+                }
+            }
+
+            if supported && supports-sleep-timer: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "Sleep timer"; font-weight: 700; font-size: 13px; }
+                    Text {
+                        text: "Minutes of inactivity before the headset sleeps.";
+                        font-size: 11px;
+                        wrap: word-wrap;
+                        color: Palette.foreground.with-alpha(0.6);
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        SpinBox {
+                            minimum: 0;
+                            maximum: 255;
+                            value <=> root.sleep-timer-minutes;
+                            horizontal-stretch: 1;
+                        }
+                        Text { text: "minutes"; vertical-alignment: center; color: Palette.foreground.with-alpha(0.6); }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-sleep-timer(root.sleep-timer-minutes); } }
+                    }
+                }
+            }
+
+            if supported && supports-volume-limiter: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "Volume limiter"; font-weight: 700; font-size: 13px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        CheckBox {
+                            text: "Enabled";
+                            checked: root.volume-limiter-enabled;
+                            toggled => { root.apply-volume-limiter(self.checked); }
+                        }
+                    }
+                }
+            }
+
+            if supported && supports-bluetooth-settings: Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "Bluetooth"; font-weight: 700; font-size: 13px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        CheckBox {
+                            text: "Turn on Bluetooth when the headset powers on";
+                            checked: root.bluetooth-power-on-enabled;
+                            toggled => { root.apply-bluetooth-power-on(self.checked); }
+                        }
+                    }
+                    Text { text: "Call volume"; font-weight: 700; font-size: 13px; }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        ComboBox {
+                            model: ["Off", "Lower game volume", "Mute game during calls"];
+                            current-index <=> root.bluetooth-call-volume-index;
+                            horizontal-stretch: 1;
+                        }
+                        Button { text: "Apply"; horizontal-stretch: 0; clicked => { root.apply-bluetooth-call-volume(root.bluetooth-call-volume-index); } }
+                    }
+                }
+            }
+
             if supported && supports-button-mapping: Rectangle {
                 border-radius: 10px;
                 background: Palette.foreground.with-alpha(0.04);
@@ -519,7 +628,7 @@ component DeviceDetailPage inherits Rectangle {
                 }
             }
 
-            if supported && !supports-dpi && !supports-polling-rate && !supports-button-mapping && !supports-sidetone && !supports-mic-mute-led && !supports-mic-volume: Rectangle {
+            if supported && !supports-dpi && !supports-polling-rate && !supports-button-mapping && !supports-sidetone && !supports-mic-mute-led && !supports-mic-volume && !supports-equalizer && !supports-sleep-timer && !supports-volume-limiter && !supports-bluetooth-settings: Rectangle {
                 border-radius: 10px;
                 background: Palette.foreground.with-alpha(0.04);
                 VerticalLayout {
@@ -540,11 +649,13 @@ component SettingsPage inherits Rectangle {
     in-out property <bool> tray-icon-monochrome;
     in-out property <bool> notification-persistent;
     in-out property <int> notification-sound-index;
+    in-out property <bool> chatmix-sinks-enabled;
     callback save-poll-interval(int);
     callback set-tray-icon-monochrome(bool);
     callback set-notification-persistent(bool);
     callback set-notification-sound(int);
     callback preview-sound(int);
+    callback set-chatmix-sinks-enabled(bool);
 
     ScrollView {
         vertical-stretch: 1;
@@ -627,6 +738,30 @@ component SettingsPage inherits Rectangle {
                 }
             }
 
+            Rectangle {
+                border-radius: 10px;
+                background: Palette.foreground.with-alpha(0.04);
+                VerticalLayout {
+                    padding: 16px;
+                    spacing: 10px;
+                    Text { text: "ChatMix"; font-weight: 700; font-size: 13px; }
+                    Text {
+                        text: "Route the headset's ChatMix dial to two virtual PipeWire sinks (\"CtrlGear Game\" and \"CtrlGear Chat\") that you manually assign apps to.";
+                        font-size: 11px;
+                        wrap: word-wrap;
+                        color: Palette.foreground.with-alpha(0.6);
+                    }
+                    HorizontalLayout {
+                        spacing: 8px;
+                        CheckBox {
+                            text: "Route ChatMix to virtual PipeWire sinks";
+                            checked: root.chatmix-sinks-enabled;
+                            toggled => { root.set-chatmix-sinks-enabled(self.checked); }
+                        }
+                    }
+                }
+            }
+
             Rectangle { vertical-stretch: 1; }
         }
     }
@@ -671,6 +806,7 @@ export component MainWindow inherits Window {
     in-out property <bool> tray-icon-monochrome: false;
     in-out property <bool> notification-persistent: false;
     in-out property <int> notification-sound-index: 0;
+    in-out property <bool> chatmix-sinks-enabled: false;
     in property <string> settings-status: "";
     in property <color> settings-status-color: Palette.foreground;
 
@@ -683,6 +819,10 @@ export component MainWindow inherits Window {
     in property <bool> detail-supports-sidetone: false;
     in property <bool> detail-supports-mic-mute-led: false;
     in property <bool> detail-supports-mic-volume: false;
+    in property <bool> detail-supports-equalizer: false;
+    in property <bool> detail-supports-sleep-timer: false;
+    in property <bool> detail-supports-volume-limiter: false;
+    in property <bool> detail-supports-bluetooth-settings: false;
     in property <bool> detail-has-battery: false;
     in property <int> detail-battery-percent: 0;
     in property <bool> detail-charging: false;
@@ -697,6 +837,10 @@ export component MainWindow inherits Window {
     in-out property <int> sidetone-index: 0;
     in-out property <int> mic-mute-led-index: 0;
     in-out property <int> mic-volume-index: 0;
+    in-out property <int> sleep-timer-minutes: 0;
+    in-out property <bool> volume-limiter-enabled: false;
+    in-out property <bool> bluetooth-power-on-enabled: false;
+    in-out property <int> bluetooth-call-volume-index: 0;
     in-out property <int> button-mapping-index-0: 4;
     in-out property <int> button-mapping-index-1: 4;
     in-out property <int> button-mapping-index-2: 4;
@@ -712,19 +856,26 @@ export component MainWindow inherits Window {
     callback apply-sidetone(int);
     callback apply-mic-mute-led(int);
     callback apply-mic-volume(int);
+    callback apply-equalizer-preset(int);
+    callback apply-sleep-timer(int);
+    callback apply-volume-limiter(bool);
+    callback apply-bluetooth-power-on(bool);
+    callback apply-bluetooth-call-volume(int);
     callback apply-button-mapping([int]);
     callback save-poll-interval(int);
     callback save-tray-icon-style(bool);
     callback save-notification-persistent(bool);
     callback save-notification-sound(int);
     callback preview-sound(int);
+    callback save-chatmix-sinks-enabled(bool);
+    callback settings-opened();
 
     HorizontalLayout {
         Sidebar {
             settings-active: root.showing-settings;
             show-about => { about-popup.show(); }
             show-devices => { root.showing-settings = false; }
-            show-settings => { root.showing-settings = true; }
+            show-settings => { root.showing-settings = true; root.settings-opened(); }
         }
 
         Rectangle {
@@ -736,11 +887,13 @@ export component MainWindow inherits Window {
                 tray-icon-monochrome <=> root.tray-icon-monochrome;
                 notification-persistent <=> root.notification-persistent;
                 notification-sound-index <=> root.notification-sound-index;
+                chatmix-sinks-enabled <=> root.chatmix-sinks-enabled;
                 save-poll-interval(minutes) => { root.save-poll-interval(minutes); }
                 set-tray-icon-monochrome(mono) => { root.save-tray-icon-style(mono); }
                 set-notification-persistent(persistent) => { root.save-notification-persistent(persistent); }
                 set-notification-sound(index) => { root.save-notification-sound(index); }
                 preview-sound(index) => { root.preview-sound(index); }
+                set-chatmix-sinks-enabled(enabled) => { root.save-chatmix-sinks-enabled(enabled); }
             }
 
             if !root.showing-settings && !showing-detail: DeviceListPage {
@@ -760,6 +913,10 @@ export component MainWindow inherits Window {
                 supports-sidetone: root.detail-supports-sidetone;
                 supports-mic-mute-led: root.detail-supports-mic-mute-led;
                 supports-mic-volume: root.detail-supports-mic-volume;
+                supports-equalizer: root.detail-supports-equalizer;
+                supports-sleep-timer: root.detail-supports-sleep-timer;
+                supports-volume-limiter: root.detail-supports-volume-limiter;
+                supports-bluetooth-settings: root.detail-supports-bluetooth-settings;
                 has-battery: root.detail-has-battery;
                 battery-percent: root.detail-battery-percent;
                 charging: root.detail-charging;
@@ -774,6 +931,10 @@ export component MainWindow inherits Window {
                 sidetone-index <=> root.sidetone-index;
                 mic-mute-led-index <=> root.mic-mute-led-index;
                 mic-volume-index <=> root.mic-volume-index;
+                sleep-timer-minutes <=> root.sleep-timer-minutes;
+                volume-limiter-enabled <=> root.volume-limiter-enabled;
+                bluetooth-power-on-enabled <=> root.bluetooth-power-on-enabled;
+                bluetooth-call-volume-index <=> root.bluetooth-call-volume-index;
                 button-mapping-index-0 <=> root.button-mapping-index-0;
                 button-mapping-index-1 <=> root.button-mapping-index-1;
                 button-mapping-index-2 <=> root.button-mapping-index-2;
@@ -786,6 +947,11 @@ export component MainWindow inherits Window {
                 apply-sidetone(index) => { root.apply-sidetone(index); }
                 apply-mic-mute-led(index) => { root.apply-mic-mute-led(index); }
                 apply-mic-volume(index) => { root.apply-mic-volume(index); }
+                apply-equalizer-preset(preset) => { root.apply-equalizer-preset(preset); }
+                apply-sleep-timer(minutes) => { root.apply-sleep-timer(minutes); }
+                apply-volume-limiter(enabled) => { root.apply-volume-limiter(enabled); }
+                apply-bluetooth-power-on(enabled) => { root.apply-bluetooth-power-on(enabled); }
+                apply-bluetooth-call-volume(mode) => { root.apply-bluetooth-call-volume(mode); }
                 apply-button-mapping(indices) => { root.apply-button-mapping(indices); }
             }
         }

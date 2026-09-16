@@ -11,8 +11,9 @@
 
 use crate::buttons::ButtonMapping;
 use crate::device::{
-    ChatMixReadable, ConfigurableButtons, ConfigurableDpi, ConfigurableMicMuteLed,
-    ConfigurableMicVolume, ConfigurablePollingRate, ConfigurableSidetone, SteelSeriesDevice,
+    ChatMixReadable, ConfigurableBluetooth, ConfigurableButtons, ConfigurableDpi,
+    ConfigurableEqualizer, ConfigurableMicMuteLed, ConfigurableMicVolume, ConfigurablePollingRate,
+    ConfigurableSidetone, ConfigurableSleepTimer, ConfigurableVolumeLimiter, SteelSeriesDevice,
     WirelessDevice,
 };
 use crate::hid::SteelSeriesHid;
@@ -96,6 +97,58 @@ pub struct MicVolumeProfile {
     pub command: u8,
 }
 
+/// Data needed to drive a multi-band equalizer: the command byte, the number
+/// of adjustable bands, and the device's built-in presets (each a
+/// `bands`-length gain array in dB), since both the band count and the
+/// preset set are device-specific.
+#[derive(Clone, Copy)]
+pub struct EqualizerProfile {
+    pub command: u8,
+    pub bands: usize,
+    /// Built-in presets, each a `bands`-length gain array in dB.
+    pub presets: &'static [&'static [f32]],
+}
+
+/// Data needed to set the auto-sleep (inactive time) timer: just the command
+/// byte, since the 0-255 minutes range is shared across devices.
+#[derive(Clone, Copy)]
+pub struct SleepTimerProfile {
+    pub command: u8,
+}
+
+/// Data needed to toggle the output volume limiter: just the command byte,
+/// since the on/off range is shared across devices.
+#[derive(Clone, Copy)]
+pub struct VolumeLimiterProfile {
+    pub command: u8,
+}
+
+/// Data needed to drive Bluetooth settings: the power-on-toggle command, the
+/// call-volume-mode command, and the distinct save command the protocol
+/// requires after setting Bluetooth-when-powered-on.
+#[derive(Clone, Copy)]
+pub struct BluetoothProfile {
+    pub power_on_command: u8,
+    pub call_volume_command: u8,
+    pub save_command: [u8; 2],
+}
+
+/// Data needed to read the device's firmware version: which command to send
+/// (plus an optional extra byte) and how many bytes to read back, since the
+/// parsing itself is a function pointer — mirrors [`BatteryProfile`]'s shape.
+#[derive(Clone, Copy)]
+pub struct FirmwareVersionProfile {
+    /// Command byte that requests the firmware version.
+    pub command: u8,
+    /// Extra byte sent immediately after `command`, if the device expects
+    /// one. `None` when the command is sent standalone.
+    pub extra_byte: Option<u8>,
+    /// Number of bytes to read back.
+    pub readback_length: usize,
+    /// Parses the raw readback into a firmware version string.
+    pub parse: fn(&[u8]) -> Result<String>,
+}
+
 /// Declarative description of one SteelSeries device: its HID identity plus
 /// one `Option<XyzProfile>` per capability it supports. `None` means the
 /// device doesn't have that capability — the corresponding [`ProfiledDevice`]
@@ -117,6 +170,11 @@ pub struct DeviceProfile {
     pub sidetone: Option<SidetoneProfile>,
     pub mic_mute_led: Option<MicMuteLedProfile>,
     pub mic_volume: Option<MicVolumeProfile>,
+    pub equalizer: Option<EqualizerProfile>,
+    pub sleep_timer: Option<SleepTimerProfile>,
+    pub volume_limiter: Option<VolumeLimiterProfile>,
+    pub bluetooth: Option<BluetoothProfile>,
+    pub firmware_version: Option<FirmwareVersionProfile>,
 }
 
 impl DeviceProfile {
@@ -140,6 +198,11 @@ impl DeviceProfile {
         sidetone: None,
         mic_mute_led: None,
         mic_volume: None,
+        equalizer: None,
+        sleep_timer: None,
+        volume_limiter: None,
+        bluetooth: None,
+        firmware_version: None,
     };
 }
 
@@ -251,6 +314,16 @@ impl SteelSeriesDevice for ProfiledDevice {
         self.hid
             .write_command(ReportType::Output, &[protocol::commands::SAVE], None)?;
         Ok(())
+    }
+
+    fn firmware_version(&self) -> Result<String> {
+        let firmware_version = require_capability!(self, firmware_version, "firmware version");
+        self.query_report(
+            firmware_version.command,
+            firmware_version.extra_byte,
+            firmware_version.readback_length,
+            firmware_version.parse,
+        )
     }
 }
 
@@ -367,6 +440,113 @@ impl ConfigurableMicVolume for ProfiledDevice {
     }
 }
 
+/// Validates equalizer band gains: the slice must have exactly
+/// `expected_len` entries, each within `-10.0..=10.0` dB, factored out as a
+/// plain function so it's testable without a live HID handle — mirrors
+/// `validate_sidetone_level`'s standalone-function shape.
+fn validate_equalizer_bands(bands: &[f32], expected_len: usize) -> Result<()> {
+    if bands.len() != expected_len {
+        return Err(Error::InvalidParameter(format!(
+            "Expected {} equalizer band values, got {}",
+            expected_len,
+            bands.len()
+        )));
+    }
+
+    if bands.iter().any(|&gain| !(-10.0..=10.0).contains(&gain)) {
+        return Err(Error::InvalidParameter(
+            "Equalizer band gain must be -10.0-10.0 dB".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Encodes a gain in dB to the device's byte representation: `0x14` is the
+/// 0 dB baseline, with each unit step representing 0.5 dB.
+fn encode_equalizer_band(gain: f32) -> u8 {
+    (0x14_i16 + (gain * 2.0).round() as i16).clamp(0, 255) as u8
+}
+
+impl ConfigurableEqualizer for ProfiledDevice {
+    fn equalizer_bands(&self) -> usize {
+        self.profile.equalizer.map(|e| e.bands).unwrap_or(0)
+    }
+
+    fn set_equalizer(&self, bands: &[f32]) -> Result<()> {
+        let equalizer = require_capability!(self, equalizer, "configurable equalizer");
+        validate_equalizer_bands(bands, equalizer.bands)?;
+
+        let mut command = vec![equalizer.command];
+        command.extend(bands.iter().map(|&gain| encode_equalizer_band(gain)));
+        command.push(0x00); // terminator byte, per the source protocol
+
+        self.hid.write_command(ReportType::Output, &command, None)?;
+        Ok(())
+    }
+
+    fn set_equalizer_preset(&self, preset: u8) -> Result<()> {
+        let equalizer = require_capability!(self, equalizer, "configurable equalizer");
+        let bands = equalizer
+            .presets
+            .get(preset as usize)
+            .ok_or_else(|| Error::InvalidParameter(format!(
+                "Invalid equalizer preset: {}. Must be 0-{}",
+                preset,
+                equalizer.presets.len().saturating_sub(1)
+            )))?;
+        self.set_equalizer(bands)
+    }
+}
+
+impl ConfigurableSleepTimer for ProfiledDevice {
+    fn set_sleep_timer(&self, minutes: u8) -> Result<()> {
+        let sleep_timer = require_capability!(self, sleep_timer, "configurable sleep timer");
+        self.hid.write_command(ReportType::Output, &[sleep_timer.command, minutes], None)?;
+        Ok(())
+    }
+}
+
+impl ConfigurableVolumeLimiter for ProfiledDevice {
+    fn set_volume_limiter(&self, enabled: bool) -> Result<()> {
+        let volume_limiter = require_capability!(self, volume_limiter, "configurable volume limiter");
+        self.hid
+            .write_command(ReportType::Output, &[volume_limiter.command, enabled as u8], None)?;
+        Ok(())
+    }
+}
+
+/// Validates a Bluetooth call-volume mode is in the 0-2 range, factored out
+/// as a plain function so it's testable without a live HID handle — mirrors
+/// `validate_sidetone_level`'s standalone-function shape.
+fn validate_bluetooth_call_volume_mode(mode: u8) -> Result<()> {
+    if mode > 2 {
+        return Err(Error::InvalidParameter(
+            "Bluetooth call volume mode must be 0-2".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+impl ConfigurableBluetooth for ProfiledDevice {
+    fn set_bluetooth_when_powered_on(&self, enabled: bool) -> Result<()> {
+        let bluetooth = require_capability!(self, bluetooth, "configurable bluetooth settings");
+        self.hid
+            .write_command(ReportType::Output, &[bluetooth.power_on_command, enabled as u8], None)?;
+        self.hid
+            .write_command(ReportType::Output, &bluetooth.save_command, None)?;
+        Ok(())
+    }
+
+    fn set_bluetooth_call_volume(&self, mode: u8) -> Result<()> {
+        validate_bluetooth_call_volume_mode(mode)?;
+        let bluetooth = require_capability!(self, bluetooth, "configurable bluetooth settings");
+        self.hid
+            .write_command(ReportType::Output, &[bluetooth.call_volume_command, mode], None)?;
+        Ok(())
+    }
+}
+
 impl ProfiledDevice {
     /// Sends `[command]` (plus `extra_byte`, if any), reads back
     /// `readback_length` bytes, and hands the response to `parse`. Shared by
@@ -424,7 +604,7 @@ impl ConfigurableButtons for ProfiledDevice {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::device::rival3_wireless::RIVAL3_WIRELESS_PROFILE;
+    use crate::device::rival3_wireless::{parse_firmware_version, RIVAL3_WIRELESS_PROFILE};
 
     #[test]
     fn test_dpi_to_byte_mapping() {
@@ -502,6 +682,11 @@ mod tests {
             sidetone: None,
             mic_mute_led: None,
             mic_volume: None,
+            equalizer: None,
+            sleep_timer: None,
+            volume_limiter: None,
+            bluetooth: None,
+            firmware_version: None,
         };
 
         const TRAIT_DEFAULT_RANGE: (u16, u16, u16) = (100, 18000, 100);
@@ -528,6 +713,11 @@ mod tests {
             sidetone: None,
             mic_mute_led: None,
             mic_volume: None,
+            equalizer: None,
+            sleep_timer: None,
+            volume_limiter: None,
+            bluetooth: None,
+            firmware_version: None,
         };
 
         assert_eq!(dpi_range_for(&TEST_PROFILE), (0, 0, 0));
@@ -579,5 +769,69 @@ mod tests {
         for level in 0..=7 {
             assert!(validate_mic_volume_level(level).is_ok());
         }
+    }
+
+    #[test]
+    fn validate_equalizer_bands_rejects_wrong_length() {
+        let bands = [0.0; 9];
+        assert!(validate_equalizer_bands(&bands, 10).is_err());
+        assert!(matches!(
+            validate_equalizer_bands(&bands, 10),
+            Err(Error::InvalidParameter(_))
+        ));
+    }
+
+    #[test]
+    fn validate_equalizer_bands_rejects_out_of_range_gain() {
+        let mut bands = [0.0; 10];
+        bands[3] = 10.1;
+        assert!(validate_equalizer_bands(&bands, 10).is_err());
+        assert!(matches!(
+            validate_equalizer_bands(&bands, 10),
+            Err(Error::InvalidParameter(_))
+        ));
+
+        let mut bands = [0.0; 10];
+        bands[7] = -10.1;
+        assert!(validate_equalizer_bands(&bands, 10).is_err());
+    }
+
+    #[test]
+    fn validate_equalizer_bands_accepts_valid_input() {
+        let bands = [-10.0, -5.0, 0.0, 5.0, 10.0, 1.0, -1.0, 2.5, -2.5, 0.0];
+        assert!(validate_equalizer_bands(&bands, 10).is_ok());
+    }
+
+    #[test]
+    fn encode_equalizer_band_zero_gain_is_baseline() {
+        assert_eq!(encode_equalizer_band(0.0), 0x14);
+    }
+
+    #[test]
+    fn set_bluetooth_call_volume_rejects_mode_above_2() {
+        assert!(validate_bluetooth_call_volume_mode(3).is_err());
+        assert!(matches!(
+            validate_bluetooth_call_volume_mode(3),
+            Err(Error::InvalidParameter(_))
+        ));
+    }
+
+    #[test]
+    fn set_bluetooth_call_volume_accepts_mode_0_to_2() {
+        for mode in 0..=2 {
+            assert!(validate_bluetooth_call_volume_mode(mode).is_ok());
+        }
+    }
+
+    #[test]
+    fn encode_equalizer_band_extremes_stay_in_range() {
+        assert_eq!(encode_equalizer_band(-10.0), 0);
+        assert_eq!(encode_equalizer_band(10.0), 0x28);
+    }
+
+    #[test]
+    fn parse_firmware_version_formats_major_minor() {
+        let response = [1, 12];
+        assert_eq!(parse_firmware_version(&response).unwrap(), "1.12");
     }
 }

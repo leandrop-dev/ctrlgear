@@ -1,14 +1,25 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use ctrlgear_core::device::arctis_nova_7::PRODUCT_ID as ARCTIS_NOVA_7_PRODUCT_ID;
 use ctrlgear_core::device::rival3_wireless::PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID;
 use ctrlgear_core::registry::{self, DeviceSummary};
 use ctrlgear_core::Error;
 
+mod chatmix_sinks;
 mod config;
 
 slint::include_modules!();
+
+/// Serializes every HID transaction (write→delay→read) against the
+/// SteelSeries device bus. The protocol is single-outstanding-request (see
+/// `DEFAULT_COMMAND_DELAY_MS` in `core/src/protocol.rs`), so once the
+/// chatmix worker thread (`chatmix_sinks`) is enabled, two threads issuing
+/// independent transactions against the same physical device can interleave
+/// and corrupt each other's reads. Cheap to acquire, so both call sites hold
+/// it unconditionally rather than only while chatmix is enabled.
+pub(crate) static HID_BUS_LOCK: Mutex<()> = Mutex::new(());
 
 /// Colors used for detail-page status text; kept in sync with the `#4caf50`
 /// / `#e05050` accents used directly in main.slint for battery/card state.
@@ -66,6 +77,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         tray.set_monochrome(matches!(settings.tray_icon_style, config::TrayIconStyle::Monochrome));
         window.set_notification_persistent(settings.notification_persistent);
         window.set_notification_sound_index(sound_choice_index(settings.notification_sound));
+        window.set_chatmix_sinks_enabled(settings.chatmix_sinks_enabled);
+    }
+
+    // Persistent chatmix worker: spawned once, unconditionally, regardless of
+    // the initial toggle state — never spawned/killed per toggle. See
+    // `chatmix_sinks` module docs for why (avoids a toggle-off/toggle-on race
+    // running two workers against the same fixed sink node names).
+    let chatmix_startup_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let (chatmix_tx, chatmix_shutdown_rx) = chatmix_sinks::spawn(chatmix_startup_error.clone());
+    if settings_cell.borrow().chatmix_sinks_enabled {
+        // Device may not be plugged in yet — the worker's own poll loop
+        // no-ops until one appears, satisfying AC10 without any extra logic
+        // here.
+        let _ = chatmix_tx.send(chatmix_sinks::WorkerCommand::Enable);
+    }
+
+    {
+        let window = window.as_weak();
+        let chatmix_startup_error = chatmix_startup_error.clone();
+        window.unwrap().on_settings_opened(move || {
+            let window = window.unwrap();
+            let pending = chatmix_startup_error.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let Some(message) = pending {
+                window.set_settings_status(format!("ChatMix sinks: {message}").into());
+                window.set_settings_status_color(STATUS_COLOR_ERROR);
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let settings_cell = settings_cell.clone();
+        let chatmix_tx = chatmix_tx.clone();
+        let chatmix_startup_error = chatmix_startup_error.clone();
+        window.unwrap().on_save_chatmix_sinks_enabled(move |enabled| {
+            let window = window.unwrap();
+            let settings = {
+                let mut settings = *settings_cell.borrow();
+                settings.chatmix_sinks_enabled = enabled;
+                *settings_cell.borrow_mut() = settings;
+                settings
+            };
+            window.set_chatmix_sinks_enabled(enabled);
+            if enabled {
+                let _ = chatmix_tx.send(chatmix_sinks::WorkerCommand::Enable);
+                // The checkbox lives on the Settings page itself, so
+                // `on_settings_opened`'s check (which only fires on
+                // navigating TO Settings) never runs for this toggle-on —
+                // the user is already there. Poll `chatmix_startup_error`
+                // once after a delay comfortably longer than the worker's
+                // bounded sink-creation roundtrip (`ROUNDTRIP_TIMEOUT` in
+                // `chatmix_sinks.rs`, 300ms) so a manual toggle-on failure
+                // still surfaces as a toast.
+                let window = window.as_weak();
+                let chatmix_startup_error = chatmix_startup_error.clone();
+                slint::Timer::single_shot(Duration::from_millis(750), move || {
+                    if let Some(window) = window.upgrade() {
+                        let pending = chatmix_startup_error.lock().unwrap_or_else(|e| e.into_inner()).take();
+                        if let Some(message) = pending {
+                            window.set_settings_status(format!("ChatMix sinks: {message}").into());
+                            window.set_settings_status_color(STATUS_COLOR_ERROR);
+                        }
+                    }
+                });
+            } else {
+                let _ = chatmix_tx.send(chatmix_sinks::WorkerCommand::Disable);
+            }
+            show_save_status(&window, config::save(&settings));
+        });
     }
 
     let poll_timer = Rc::new(slint::Timer::default());
@@ -182,6 +262,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window.set_sidetone_index(0);
             window.set_mic_mute_led_index(0);
             window.set_mic_volume_index(0);
+            window.set_sleep_timer_minutes(0);
+            window.set_volume_limiter_enabled(false);
+            window.set_bluetooth_power_on_enabled(false);
+            window.set_bluetooth_call_volume_index(0);
             window.set_button_mapping_index_0(4);
             window.set_button_mapping_index_1(4);
             window.set_button_mapping_index_2(4);
@@ -312,6 +396,116 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         let window = window.as_weak();
         let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_equalizer_preset(move |preset| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_equalizer_preset(product_id, preset) {
+                Ok(()) => {
+                    window.set_detail_status("Equalizer preset applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_sleep_timer(move |minutes| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_sleep_timer(product_id, minutes) {
+                Ok(()) => {
+                    window.set_detail_status("Sleep timer applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_volume_limiter(move |enabled| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_volume_limiter(product_id, enabled) {
+                Ok(()) => {
+                    window.set_detail_status("Volume limiter applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_bluetooth_power_on(move |enabled| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_bluetooth_power_on(product_id, enabled) {
+                Ok(()) => {
+                    window.set_detail_status("Bluetooth-when-powered-on applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
+        window.unwrap().on_apply_bluetooth_call_volume(move |mode| {
+            let window = window.unwrap();
+            let Some(product_id) = *selected_product_id.borrow() else {
+                return;
+            };
+
+            match apply_bluetooth_call_volume(product_id, mode) {
+                Ok(()) => {
+                    window.set_detail_status("Bluetooth call volume applied.".into());
+                    window.set_detail_status_color(STATUS_COLOR_OK);
+                }
+                Err(e) => {
+                    window.set_detail_status(e.to_string().into());
+                    window.set_detail_status_color(STATUS_COLOR_ERROR);
+                }
+            }
+        });
+    }
+
+    {
+        let window = window.as_weak();
+        let selected_product_id = selected_product_id.clone();
         window.unwrap().on_apply_button_mapping(move |indices| {
             let window = window.unwrap();
             let Some(product_id) = *selected_product_id.borrow() else {
@@ -347,9 +541,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window.invoke_refresh();
         });
     }
-    tray.on_quit(|| {
-        slint::quit_event_loop().unwrap();
-    });
+    {
+        let chatmix_tx = chatmix_tx.clone();
+        tray.on_quit(move || {
+            let _ = chatmix_tx.send(chatmix_sinks::WorkerCommand::Shutdown);
+            // 6s: comfortably longer than core/src/hid.rs's 5000ms HID read
+            // timeout, so a legitimately-slow-but-not-hung HID read during
+            // shutdown isn't mistaken for a hang. This is the one place the
+            // UI thread is allowed to block on the worker — everywhere else
+            // it must never wait on it.
+            if chatmix_shutdown_rx.recv_timeout(Duration::from_secs(6)).is_err() {
+                eprintln!("chatmix worker did not shut down cleanly within 6s");
+            }
+            slint::quit_event_loop().unwrap();
+        });
+    }
 
     {
         let window = window.as_weak();
@@ -427,6 +633,10 @@ fn apply_detail_summary(window: &MainWindow, summary: &DeviceSummary) {
     window.set_detail_supports_sidetone(summary.supports_sidetone);
     window.set_detail_supports_mic_mute_led(summary.supports_mic_mute_led);
     window.set_detail_supports_mic_volume(summary.supports_mic_volume);
+    window.set_detail_supports_equalizer(summary.supports_equalizer);
+    window.set_detail_supports_sleep_timer(summary.supports_sleep_timer);
+    window.set_detail_supports_volume_limiter(summary.supports_volume_limiter);
+    window.set_detail_supports_bluetooth_settings(summary.supports_bluetooth_settings);
     window.set_detail_dpi_help(dpi_help_text(summary.dpi_range).into());
     window.set_detail_has_battery(summary.battery.is_some());
     window.set_detail_battery_percent(summary.battery.map(|b| b.level).unwrap_or(0) as i32);
@@ -625,6 +835,10 @@ mod tests {
             supports_sidetone: false,
             supports_mic_mute_led: false,
             supports_mic_volume: false,
+            supports_equalizer: false,
+            supports_sleep_timer: false,
+            supports_volume_limiter: false,
+            supports_bluetooth_settings: false,
             dpi_range: None,
             connection_type: ConnectionType::Unknown,
             battery,
@@ -706,6 +920,10 @@ mod tests {
             supports_sidetone: false,
             supports_mic_mute_led: false,
             supports_mic_volume: false,
+            supports_equalizer: false,
+            supports_sleep_timer: false,
+            supports_volume_limiter: false,
+            supports_bluetooth_settings: false,
             dpi_range: None,
             connection_type: ConnectionType::Unknown,
             battery,
@@ -801,6 +1019,7 @@ mod tests {
 }
 
 fn discover() -> Vec<DeviceSummary> {
+    let _guard = HID_BUS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     match hidapi::HidApi::new() {
         Ok(api) => registry::discover(&api),
         Err(_) => Vec::new(),
@@ -908,6 +1127,38 @@ fn apply_mic_volume(product_id: u16, index: i32) -> ctrlgear_core::Result<()> {
     let api = hidapi::HidApi::new()?;
     let device = registry::open(&api, product_id)?;
     device.set_mic_volume(level)
+}
+
+fn apply_equalizer_preset(product_id: u16, preset: i32) -> ctrlgear_core::Result<()> {
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_equalizer_preset(preset as u8)
+}
+
+fn apply_sleep_timer(product_id: u16, minutes: i32) -> ctrlgear_core::Result<()> {
+    let minutes = minutes.clamp(0, 255) as u8;
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_sleep_timer(minutes)
+}
+
+fn apply_volume_limiter(product_id: u16, enabled: bool) -> ctrlgear_core::Result<()> {
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_volume_limiter(enabled)
+}
+
+fn apply_bluetooth_power_on(product_id: u16, enabled: bool) -> ctrlgear_core::Result<()> {
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_bluetooth_when_powered_on(enabled)
+}
+
+fn apply_bluetooth_call_volume(product_id: u16, mode: i32) -> ctrlgear_core::Result<()> {
+    let mode = mode.clamp(0, 2) as u8;
+    let api = hidapi::HidApi::new()?;
+    let device = registry::open(&api, product_id)?;
+    device.set_bluetooth_call_volume(mode)
 }
 
 /// Keyword order matches the `ComboBox` `model` in `gui/ui/main.slint`'s
