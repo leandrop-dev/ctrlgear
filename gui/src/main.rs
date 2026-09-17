@@ -13,12 +13,7 @@ mod config;
 slint::include_modules!();
 
 /// Serializes every HID transaction (write→delay→read) against the
-/// SteelSeries device bus. The protocol is single-outstanding-request (see
-/// `DEFAULT_COMMAND_DELAY_MS` in `core/src/protocol.rs`), so once the
-/// chatmix worker thread (`chatmix_sinks`) is enabled, two threads issuing
-/// independent transactions against the same physical device can interleave
-/// and corrupt each other's reads. Cheap to acquire, so both call sites hold
-/// it unconditionally rather than only while chatmix is enabled.
+/// SteelSeries device bus.
 pub(crate) static HID_BUS_LOCK: Mutex<()> = Mutex::new(());
 
 /// Colors used for detail-page status text; kept in sync with the `#4caf50`
@@ -52,18 +47,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let window = MainWindow::new()?;
     let tray = AppTray::new()?;
 
-    // Must be set before the window is shown, and after the platform/backend
-    // exists (which `MainWindow::new()` just initialized) — `set_xdg_app_id`
-    // errors out if called with no platform set up yet. On Wayland, winit
-    // can't set a runtime icon at all (icons are resolved from a .desktop
-    // file via this app ID) — see packaging/ctrlgear.desktop and the icon
-    // installed to hicolor/scalable/apps/ctrlgear.svg by `make install` /
-    // the PKGBUILD.
     slint::set_xdg_app_id("ctrlgear")?;
 
-    // Cache of the last discovery, so `select_device`/`apply_dpi` can look
-    // up the product ID for the currently selected card by index without
-    // re-running discovery (and without threading that data through Slint).
     let summaries: Rc<RefCell<Vec<DeviceSummary>>> = Rc::new(RefCell::new(Vec::new()));
     let selected_product_id: Rc<RefCell<Option<u16>>> = Rc::new(RefCell::new(None));
     let battery_state: Rc<RefCell<std::collections::HashMap<u16, BatteryState>>> =
@@ -80,16 +65,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         window.set_chatmix_sinks_enabled(settings.chatmix_sinks_enabled);
     }
 
-    // Persistent chatmix worker: spawned once, unconditionally, regardless of
-    // the initial toggle state — never spawned/killed per toggle. See
-    // `chatmix_sinks` module docs for why (avoids a toggle-off/toggle-on race
-    // running two workers against the same fixed sink node names).
     let chatmix_startup_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
     let (chatmix_tx, chatmix_shutdown_rx) = chatmix_sinks::spawn(chatmix_startup_error.clone());
     if settings_cell.borrow().chatmix_sinks_enabled {
-        // Device may not be plugged in yet — the worker's own poll loop
-        // no-ops until one appears, satisfying AC10 without any extra logic
-        // here.
         let _ = chatmix_tx.send(chatmix_sinks::WorkerCommand::Enable);
     }
 
@@ -122,14 +100,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             window.set_chatmix_sinks_enabled(enabled);
             if enabled {
                 let _ = chatmix_tx.send(chatmix_sinks::WorkerCommand::Enable);
-                // The checkbox lives on the Settings page itself, so
-                // `on_settings_opened`'s check (which only fires on
-                // navigating TO Settings) never runs for this toggle-on —
-                // the user is already there. Poll `chatmix_startup_error`
-                // once after a delay comfortably longer than the worker's
-                // bounded sink-creation roundtrip (`ROUNDTRIP_TIMEOUT` in
-                // `chatmix_sinks.rs`, 300ms) so a manual toggle-on failure
-                // still surfaces as a toast.
                 let window = window.as_weak();
                 let chatmix_startup_error = chatmix_startup_error.clone();
                 slint::Timer::single_shot(Duration::from_millis(750), move || {
@@ -578,11 +548,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             };
 
-            // rivalcfg's rainbow_effect has no "off" choice — per aerox3.py's
-            // comment, the rainbow effect "can be cleared by setting a
-            // color" instead. So unchecking the toggle has nothing to send;
-            // only the checked (enable, choosing "all" zones) side maps to
-            // an actual command.
             if !enabled {
                 window.set_detail_status(
                     "Rainbow has no direct \"off\" command — set a zone color or default lighting to turn it off on the device.".into(),
@@ -646,11 +611,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let chatmix_tx = chatmix_tx.clone();
         tray.on_quit(move || {
             let _ = chatmix_tx.send(chatmix_sinks::WorkerCommand::Shutdown);
-            // 6s: comfortably longer than core/src/hid.rs's 5000ms HID read
-            // timeout, so a legitimately-slow-but-not-hung HID read during
-            // shutdown isn't mistaken for a hang. This is the one place the
-            // UI thread is allowed to block on the worker — everywhere else
-            // it must never wait on it.
             if chatmix_shutdown_rx.recv_timeout(Duration::from_secs(6)).is_err() {
                 eprintln!("chatmix worker did not shut down cleanly within 6s");
             }
@@ -685,16 +645,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// The whole app is SteelSeries-only, so the brand prefix on device names
-/// (e.g. `SteelSeriesDevice::name()`) is redundant here — strip it for
-/// display. The CLI keeps the full name as-is.
+/// Strips the redundant "SteelSeries" prefix from a device name for display.
 fn display_name(name: &str) -> &str {
     name.strip_prefix("SteelSeries ").unwrap_or(name)
 }
 
-/// Short label shown next to a device's name in the list when it's reachable
-/// over more than one transport (e.g. a wireless dongle plus a USB cable
-/// plugged in to charge), since both legitimately produce separate rows.
+/// Short label shown next to a device's name when reachable over more than one transport.
 fn connection_label(kind: registry::ConnectionType) -> &'static str {
     match kind {
         registry::ConnectionType::UsbWired => "USB",
@@ -705,11 +661,6 @@ fn connection_label(kind: registry::ConnectionType) -> &'static str {
 }
 
 /// Formats a device's valid DPI range as help text for the detail page.
-/// The "up to 5 presets" figure is hardcoded because it's currently enforced
-/// only by `RIVAL3_WIRELESS_PROFILE`'s `DpiProfile::max_presets` (checked in
-/// `ProfiledDevice::set_dpi`) and not exposed through `ConfigurableDpi` —
-/// acceptable since Rival 3 Wireless is the only DPI-capable device today;
-/// revisit if a device with a different limit is added.
 fn dpi_help_text(range: Option<(u16, u16, u16)>) -> String {
     match range {
         Some((min, max, step)) => {
@@ -719,11 +670,7 @@ fn dpi_help_text(range: Option<(u16, u16, u16)>) -> String {
     }
 }
 
-/// Applies a device summary to the detail page's fields. The single place
-/// that knows which window properties constitute "the detail view" —
-/// called from device selection AND from both refresh paths (manual and
-/// periodic), so a field added to one path can't silently go missing from
-/// the others (this already happened once, with the chatmix fields).
+/// Applies a device summary to the detail page's fields.
 fn apply_detail_summary(window: &MainWindow, summary: &DeviceSummary) {
     window.set_detail_name(display_name(&summary.name).into());
     window.set_detail_product_id_hex(format!("0x{:04x}", summary.product_id).into());
@@ -758,18 +705,13 @@ fn apply_detail_summary(window: &MainWindow, summary: &DeviceSummary) {
     window.set_detail_status_color(STATUS_COLOR_ERROR);
 }
 
-/// Finds the current summary for the selected device in a fresh discover()
-/// result, or `None` if nothing is selected or the device dropped out of
-/// this discovery (e.g. unplugged) — callers must leave the detail page
-/// untouched in that case, not blank it.
+/// Finds the current summary for the selected device in a fresh discover() result.
 fn find_selected_summary(selected: Option<u16>, discovered: &[DeviceSummary]) -> Option<DeviceSummary> {
     let product_id = selected?;
     discovered.iter().find(|d| d.product_id == product_id).cloned()
 }
 
-/// If the detail page is open, re-applies the selected device's current
-/// summary to it. Called from both refresh paths (manual and periodic) so
-/// they can't silently drift on when/how the detail page gets refreshed.
+/// If the detail page is open, re-applies the selected device's current summary to it.
 fn refresh_detail_if_showing(window: &MainWindow, selected: Option<u16>, discovered: &[DeviceSummary]) {
     if window.get_showing_detail() {
         if let Some(summary) = find_selected_summary(selected, discovered) {
@@ -853,17 +795,7 @@ const BATTERY_SWAP_JUMP_THRESHOLD: u8 = 15;
 
 /// Determines which devices should fire a low-battery notification this
 /// poll, updating `states` accordingly. Pure state-tracking logic with no
-/// I/O, so it's safe to call from tests without side effects — the actual
-/// `notify-rust` call lives in [`check_low_battery`].
-///
-/// Fires the first time a device's level drops below
-/// [`LOW_BATTERY_THRESHOLD`], and allows it to fire again only after the
-/// device recovers back above the threshold and drops below it again.
-///
-/// A level jump of at least [`BATTERY_SWAP_JUMP_THRESHOLD`] percentage points
-/// since the last poll, while a low-battery episode is active, is treated as
-/// a battery swap: it clears the episode without notifying on the jump
-/// itself, so a later re-drop below the threshold notifies again.
+/// I/O — the actual `notify-rust` call lives in [`check_low_battery`].
 fn low_battery_transitions(
     devices: &[DeviceSummary],
     states: &mut std::collections::HashMap<u16, BatteryState>,
@@ -1156,10 +1088,6 @@ mod tests {
 
     #[test]
     fn parse_hex_color_rejects_non_ascii_without_panicking() {
-        // "aµcde" is 6 bytes (a=1, µ=2, c/d/e=1 each) but only 5 chars, so a
-        // byte-index slice like &hex[4..6] would land mid-character and
-        // panic with "byte index N is not a char boundary" if the length
-        // check used byte length without an ASCII/hex-digit guard.
         assert!(parse_hex_color("aµcde").is_err());
     }
 }
@@ -1308,8 +1236,7 @@ fn apply_bluetooth_call_volume(product_id: u16, mode: i32) -> ctrlgear_core::Res
 }
 
 /// Keyword order matches the `ComboBox` `model` in `gui/ui/main.slint`'s
-/// button-mapping section, and is understood by `ButtonAction::from_str`
-/// (`core/src/buttons.rs`), reused here instead of a second parser.
+/// button-mapping section.
 const BUTTON_ACTION_KEYWORDS: [&str; 11] = [
     "disabled", "dpiswitch", "scrollup", "scrolldown", "default", "button1", "button2", "button3",
     "button4", "button5", "button6",

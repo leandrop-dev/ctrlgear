@@ -1,13 +1,6 @@
-//! Declarative device profiles.
-//!
-//! Instead of one hand-written struct plus trait impls per device (the old
-//! `rival3_wireless.rs` / `arctis_nova_7.rs` pattern), a [`DeviceProfile`] is
-//! a `const` data description of a device's HID identity and the commands
-//! its capabilities need. [`ProfiledDevice`] wraps a [`SteelSeriesHid`] and
-//! a `&'static DeviceProfile` and implements every capability trait from
-//! [`crate::device`] generically, by interpreting that data. Adding a new
-//! device means adding a new `const DeviceProfile` (see `rival3_wireless.rs`
-//! / `arctis_nova_7.rs` for examples), not a new module full of trait impls.
+//! Declarative device profiles: a [`DeviceProfile`] is a `const` data
+//! description that [`ProfiledDevice`] interprets to implement every
+//! capability trait from [`crate::device`] generically.
 
 use crate::buttons::ButtonMapping;
 use crate::device::{
@@ -21,11 +14,7 @@ use crate::protocol::{self, BatteryStatus, ChatMixStatus, ReportType};
 use crate::{Error, Result};
 
 /// Data needed to query battery/status: which command to send and how to
-/// parse the reply. The two known reply shapes so far (Rival 3 Wireless's
-/// plain 3-byte report vs. Arctis Nova 7's offset-2/3 status report with an
-/// offline sentinel) differ enough in both layout and error handling that
-/// the parsing itself is a function pointer rather than a further-decomposed
-/// data shape — see each profile's `parse_*` function for the concrete rule.
+/// parse the reply.
 #[derive(Clone, Copy)]
 pub struct BatteryProfile {
     /// Command byte that requests a battery/status report.
@@ -40,11 +29,8 @@ pub struct BatteryProfile {
     pub parse: fn(&[u8]) -> Result<BatteryStatus>,
 }
 
-/// Data needed to read chatmix: kept as its own struct rather than folded
-/// into `BatteryProfile`, even though on the Arctis Nova 7 both share the
-/// identical 0xb0 command/response — their offline-handling semantics
-/// differ (chatmix must stay readable offline, battery must not), and a
-/// future device could have one capability without the other.
+/// Data needed to read chatmix, kept as its own struct rather than folded
+/// into `BatteryProfile`.
 #[derive(Clone, Copy)]
 pub struct ChatMixProfile {
     pub command: u8,
@@ -55,42 +41,19 @@ pub struct ChatMixProfile {
 
 /// Data needed to set DPI: the command byte, the DPI-value -> device-value
 /// mapping table, and the maximum number of presets the device accepts.
-///
-/// The mapping's value is `u16` rather than `u8` to accommodate the Prime
-/// Mini's formula-based sensor, whose encoded value (`dpi / 50`) runs up to
-/// `0x0168` (360) — too large for a single byte. Every other known device
-/// (Rival 3 Wireless, Aerox 3/5, Rival 3 Gen 2) has values that fit in the
-/// low byte, so this is a pure widening with no behavior change for them.
 #[derive(Clone, Copy)]
 pub struct DpiProfile {
     pub command: u8,
     pub mapping: &'static [(u16, u16)],
     pub max_presets: u8,
-    /// The "selected preset" index `set_dpi` requests as active — rivalcfg
-    /// calls this a device's `first_preset` (the index its own preset
-    /// numbering starts from): `1` for Rival 3 Wireless/Aerox 3/Rival 3 Gen
-    /// 2, `0` for Aerox 5/Prime Mini. This crate doesn't yet support
-    /// choosing a different preset to activate, so `set_dpi` always
-    /// requests this exact preset.
+    /// The "selected preset" index `set_dpi` requests as active.
     pub first_preset: u8,
-    /// Number of little-endian bytes `set_dpi` writes per DPI value: `1`
-    /// for Aerox 3/Aerox 5/Rival 3 Gen 2 (rivalcfg's `dpi_length_byte: 1` —
-    /// `mapping`'s value fits a single byte, no padding sent), `2` for
-    /// Rival 3 Wireless (`dpi_length_byte: 2`, padded with an always-0x00
-    /// high byte since its values also fit in one byte) and the Prime Mini
-    /// (`dpi_length_byte: 2`, whose formula-derived value genuinely needs
-    /// both bytes).
+    /// Number of little-endian bytes `set_dpi` writes per DPI value.
     pub value_width: u8,
 }
 
 /// Data needed to set polling rate: the command byte and the device's own
-/// Hz -> device-byte mapping. Originally assumed shared across every device
-/// via the [`PollingRate`] enum's fixed mapping — true for Rival 3 Wireless
-/// (`{125:0x03, 250:0x02, 500:0x01, 1000:0x00}`) — but the Aerox 3/Aerox
-/// 5/Rival 3 Gen 2/Prime Mini family uses a shifted-by-one mapping
-/// (`{125:0x04, 250:0x03, 500:0x02, 1000:0x01}`, verified against
-/// rivalcfg's `aerox3.py` et al.), so the mapping is a per-profile field
-/// rather than a crate-wide constant.
+/// Hz -> device-byte mapping.
 #[derive(Clone, Copy)]
 pub struct PollingRateProfile {
     pub command: u8,
@@ -137,12 +100,7 @@ pub struct EqualizerProfile {
     pub presets: &'static [&'static [f32]],
 }
 
-/// Data needed to drive per-zone RGB lighting: the zone-color command byte
-/// plus a per-zone byte-prefix table (the padding bytes between the command
-/// and the RGB triplet are positional, per rivalcfg's `aerox3.py` /
-/// `rival3_gen2.py` / `prime_mini.py`, not derivable from a formula), and
-/// the reactive-color/brightness/rainbow sub-commands, each `Option` since
-/// the Prime Mini (single zone only) has none of them — see
+/// Data needed to drive per-zone RGB lighting — see
 /// [`crate::device::aerox_gen2_rgb`] for the concrete profiles.
 #[derive(Clone, Copy)]
 pub struct RgbProfile {
@@ -240,20 +198,14 @@ pub struct DeviceProfile {
     pub firmware_version: Option<FirmwareVersionProfile>,
     pub rgb: Option<RgbProfile>,
     /// Bytes sent (standalone, no readback) to persist settings to device
-    /// memory. Defaults to `[0x09]` via [`DeviceProfile::NONE`] — the save
-    /// command every shipped device (Rival 3 Wireless, Arctis Nova 7) uses
-    /// — since the Aerox/Rival 3 Gen 2/Prime Mini family needs a different
-    /// 2-byte sequence (`[0x11, 0x00]`).
+    /// memory. Defaults to `[0x09]` via [`DeviceProfile::NONE`].
     pub save_command: &'static [u8],
 }
 
 impl DeviceProfile {
     /// A base profile with every identity field zeroed and every capability
     /// `None`. Declare a device's profile with `..DeviceProfile::NONE` to
-    /// pick up `None` for every capability field you don't explicitly set,
-    /// instead of writing `dpi: None, polling_rate: None, buttons: None, ...`
-    /// by hand for devices that only support one or two capabilities — the
-    /// common case across the catalog (see `plan.md`'s audit tables).
+    /// pick up `None` for every capability field you don't explicitly set.
     pub const NONE: DeviceProfile = DeviceProfile {
         name: "",
         vendor_id: 0,
@@ -278,10 +230,7 @@ impl DeviceProfile {
     };
 }
 
-/// Derives (min, max, step) from a DPI mapping table itself, so the reported
-/// valid range always reflects the actual supported values rather than a
-/// separately hand-maintained duplicate that could silently drift if the
-/// mapping table changes.
+/// Derives (min, max, step) from a DPI mapping table itself.
 fn dpi_mapping_range(mapping: &[(u16, u16)]) -> (u16, u16, u16) {
     let min = mapping.first().map(|&(dpi, _)| dpi).unwrap_or(0);
     let max = mapping.last().map(|&(dpi, _)| dpi).unwrap_or(0);
@@ -292,9 +241,7 @@ fn dpi_mapping_range(mapping: &[(u16, u16)]) -> (u16, u16, u16) {
     (min, max, step)
 }
 
-/// Computes the range [`ConfigurableDpi::dpi_range`] reports for a profile,
-/// factored out as a plain function of `&DeviceProfile` (rather than a
-/// `ProfiledDevice` method) so it's testable without a live HID handle.
+/// Computes the range [`ConfigurableDpi::dpi_range`] reports for a profile.
 fn dpi_range_for(profile: &DeviceProfile) -> (u16, u16, u16) {
     match &profile.dpi {
         Some(dpi) => dpi_mapping_range(dpi.mapping),
@@ -319,9 +266,6 @@ fn dpi_to_value(mapping: &[(u16, u16)], dpi: u16) -> Result<u16> {
 
 /// Encodes a single DPI value into the little-endian byte(s) `set_dpi`
 /// writes for it, per `value_width` (see [`DpiProfile::value_width`]).
-/// Factored out as a plain function so the per-value wire encoding —
-/// including the Prime Mini's 2-byte path — is testable without a live HID
-/// handle.
 fn encode_dpi_value(mapping: &[(u16, u16)], value_width: u8, dpi: u16) -> Result<Vec<u8>> {
     let raw = dpi_to_value(mapping, dpi)?;
     let mut bytes = vec![(raw & 0xFF) as u8];
@@ -333,10 +277,7 @@ fn encode_dpi_value(mapping: &[(u16, u16)], value_width: u8, dpi: u16) -> Result
 
 /// Fetches `$self.profile.$field`, or short-circuits the enclosing method
 /// with `Err(Error::Unsupported(..))` naming both the device and the
-/// missing capability. Every `ProfiledDevice` capability-trait method below
-/// follows this same "check the profile field, build+send the command, or
-/// refuse" shape, so the check itself lives here once instead of being
-/// hand-copied into each `impl`.
+/// missing capability.
 macro_rules! require_capability {
     ($self:expr, $field:ident, $label:expr) => {
         match &$self.profile.$field {
@@ -359,9 +300,7 @@ macro_rules! require_capability {
 pub struct ProfiledDevice {
     hid: SteelSeriesHid,
     profile: &'static DeviceProfile,
-    /// The product ID this instance was actually opened as. Kept separately
-    /// from `profile.product_ids` since a profile may cover more than one
-    /// product ID (e.g. a wired and a wireless variant of the same device).
+    /// The product ID this instance was actually opened as.
     product_id: u16,
 }
 
@@ -430,7 +369,6 @@ impl ConfigurableDpi for ProfiledDevice {
             )));
         }
 
-        // Build command: [CMD] [count] [selected_preset] [dpi1 bytes...] [dpi2 bytes...] ...
         let mut command = vec![dpi.command, values.len() as u8, dpi.first_preset];
 
         for &value in values {
@@ -447,9 +385,7 @@ impl ConfigurableDpi for ProfiledDevice {
     }
 }
 
-/// Looks up a Hz value in a profile's `choices` table, factored out as a
-/// plain function so it's testable without a live HID handle — mirrors
-/// `dpi_to_value`'s standalone-function shape.
+/// Looks up a Hz value in a profile's `choices` table.
 fn polling_rate_to_byte(choices: &[(u16, u8)], hz: u16) -> Result<u8> {
     choices
         .iter()
@@ -475,9 +411,7 @@ impl ConfigurablePollingRate for ProfiledDevice {
     }
 }
 
-/// Validates a sidetone level is in the 0-3 (Off/Low/Medium/High) range,
-/// factored out as a plain function so it's testable without a live HID
-/// handle — mirrors `dpi_to_byte`'s standalone-function shape.
+/// Validates a sidetone level is in the 0-3 (Off/Low/Medium/High) range.
 fn validate_sidetone_level(level: u8) -> Result<()> {
     if level > 3 {
         return Err(Error::InvalidParameter(
@@ -498,8 +432,7 @@ impl ConfigurableSidetone for ProfiledDevice {
 }
 
 /// Validates a mic mute LED brightness level is in the 0-3 (off to max)
-/// range, factored out as a plain function so it's testable without a live
-/// HID handle — mirrors `validate_sidetone_level`'s standalone-function shape.
+/// range.
 fn validate_mic_mute_led_level(level: u8) -> Result<()> {
     if level > 3 {
         return Err(Error::InvalidParameter(
@@ -519,9 +452,7 @@ impl ConfigurableMicMuteLed for ProfiledDevice {
     }
 }
 
-/// Validates a mic volume level is in the 0-7 (off to max) range, factored
-/// out as a plain function so it's testable without a live HID handle —
-/// mirrors `validate_sidetone_level`'s standalone-function shape.
+/// Validates a mic volume level is in the 0-7 (off to max) range.
 fn validate_mic_volume_level(level: u8) -> Result<()> {
     if level > 7 {
         return Err(Error::InvalidParameter(
@@ -542,9 +473,7 @@ impl ConfigurableMicVolume for ProfiledDevice {
 }
 
 /// Validates equalizer band gains: the slice must have exactly
-/// `expected_len` entries, each within `-10.0..=10.0` dB, factored out as a
-/// plain function so it's testable without a live HID handle — mirrors
-/// `validate_sidetone_level`'s standalone-function shape.
+/// `expected_len` entries, each within `-10.0..=10.0` dB.
 fn validate_equalizer_bands(bands: &[f32], expected_len: usize) -> Result<()> {
     if bands.len() != expected_len {
         return Err(Error::InvalidParameter(format!(
@@ -580,7 +509,7 @@ impl ConfigurableEqualizer for ProfiledDevice {
 
         let mut command = vec![equalizer.command];
         command.extend(bands.iter().map(|&gain| encode_equalizer_band(gain)));
-        command.push(0x00); // terminator byte, per the source protocol
+        command.push(0x00);
 
         self.hid.write_command(ReportType::Output, &command, None)?;
         Ok(())
@@ -617,9 +546,7 @@ impl ConfigurableVolumeLimiter for ProfiledDevice {
     }
 }
 
-/// Validates a Bluetooth call-volume mode is in the 0-2 range, factored out
-/// as a plain function so it's testable without a live HID handle — mirrors
-/// `validate_sidetone_level`'s standalone-function shape.
+/// Validates a Bluetooth call-volume mode is in the 0-2 range.
 fn validate_bluetooth_call_volume_mode(mode: u8) -> Result<()> {
     if mode > 2 {
         return Err(Error::InvalidParameter(
@@ -648,9 +575,7 @@ impl ConfigurableBluetooth for ProfiledDevice {
     }
 }
 
-/// Looks up `zone`'s byte-prefix in `zones`, factored out as a plain
-/// function so it's testable without a live HID handle — mirrors
-/// `dpi_to_value`'s standalone-function shape.
+/// Looks up `zone`'s byte-prefix in `zones`.
 fn zone_prefix(zones: &[(u8, &'static [u8])], zone: u8) -> Result<&'static [u8]> {
     zones
         .iter()
@@ -680,8 +605,7 @@ fn build_zone_color_command(rgb: &RgbProfile, zone: u8, r: u8, g: u8, b: u8) -> 
 }
 
 /// Builds the reactive (on-click) color command: `[cmd, 0x01, 0x00, r, g,
-/// b]` when enabled, `[cmd, 0x00, 0x00, 0x00, 0x00, 0x00]` when disabled —
-/// verified against rivalcfg's `reactive_rgbcolor` handler.
+/// b]` when enabled, `[cmd, 0x00, 0x00, 0x00, 0x00, 0x00]` when disabled.
 fn build_reactive_color_command(reactive_command: u8, color: Option<(u8, u8, u8)>) -> Vec<u8> {
     let mut command = vec![reactive_command];
     match color {
@@ -692,9 +616,7 @@ fn build_reactive_color_command(reactive_command: u8, color: Option<(u8, u8, u8)
 }
 
 /// Clamps an LED brightness value into a profile's device-byte
-/// `brightness_range`, factored out as a plain function so it's testable
-/// without a live HID handle — mirrors `validate_sidetone_level`'s
-/// standalone-function shape.
+/// `brightness_range`.
 fn clamp_led_brightness(range: (u8, u8), level: u8) -> u8 {
     level.clamp(range.0, range.1)
 }
@@ -813,12 +735,7 @@ impl ConfigurableRgb for ProfiledDevice {
 
 impl ProfiledDevice {
     /// Sends `[command]` (plus `extra_byte`, if any), reads back
-    /// `readback_length` bytes, and hands the response to `parse`. Shared by
-    /// every capability whose HID shape is "one command byte, one optional
-    /// extra byte, one readback, one parse function" — currently
-    /// `battery_status` and `chatmix_status`, which happen to target the
-    /// identical physical report on the Arctis Nova 7 but are still issued
-    /// as separate round-trips (see `ChatMixProfile`'s doc comment for why).
+    /// `readback_length` bytes, and hands the response to `parse`.
     fn query_report<T>(
         &self,
         command: u8,
@@ -890,9 +807,7 @@ mod tests {
     }
 
     /// Regression guard for the Prime Mini's 2-byte, formula-based DPI
-    /// encoding: `set_dpi` must write both the low and high byte of the
-    /// looked-up value (unlike the 1-byte-per-value Aerox family), and the
-    /// max preset value (18000 -> 0x0168) genuinely needs the high byte.
+    /// encoding.
     #[test]
     fn encode_dpi_value_writes_two_bytes_for_prime_mini_value_width() {
         use crate::device::aerox_gen2_rgb::PRIME_MINI_PROFILE;
@@ -902,8 +817,7 @@ mod tests {
     }
 
     /// Regression guard for the Aerox family's 1-byte-per-value DPI
-    /// encoding (rivalcfg's `dpi_length_byte: 1`): unlike Rival 3 Wireless,
-    /// `set_dpi` must NOT pad with a high byte.
+    /// encoding.
     #[test]
     fn encode_dpi_value_writes_one_byte_for_aerox_value_width() {
         use crate::device::aerox_gen2_rgb::AEROX3_PROFILE;
@@ -914,9 +828,7 @@ mod tests {
 
     /// Regression guard: Rival 3 Wireless and the Aerox/Rival 3 Gen
     /// 2/Prime Mini family use different (shifted-by-one) polling-rate byte
-    /// mappings — verified against rivalcfg's `rival3_wireless.py` vs.
-    /// `aerox3.py` — so each profile's own `choices` must be consulted
-    /// rather than a single shared mapping.
+    /// mappings.
     #[test]
     fn polling_rate_to_byte_uses_profiles_own_choices() {
         let rival3_choices = RIVAL3_WIRELESS_PROFILE.polling_rate.unwrap().choices;
@@ -942,9 +854,7 @@ mod tests {
     }
 
     /// Guards the "in steps of N" claim shown as DPI help text in the GUI
-    /// (`gui/src/main.rs::dpi_help_text`): if a DPI mapping table ever
-    /// gained a gap, `dpi_mapping_range()`'s derived step would no longer
-    /// describe every entry, and this test would catch it.
+    /// (`gui/src/main.rs::dpi_help_text`).
     #[test]
     fn dpi_mapping_is_a_uniform_arithmetic_sequence_matching_its_step() {
         let mapping = RIVAL3_WIRELESS_PROFILE.dpi.unwrap().mapping;
@@ -965,12 +875,7 @@ mod tests {
     /// `dpi_range_for` equivalent, which doesn't need a live HID handle)
     /// must always derive its range from the profile's own `DpiProfile`
     /// mapping, never silently fall through to `ConfigurableDpi::dpi_range`'s
-    /// trait default of `(100, 18000, 100)`. That default happens to equal
-    /// the real Rival 3 Wireless range, so a profile whose mapping produces
-    /// a *different* range is needed to actually catch an implementation
-    /// that forgot to consult `DpiProfile::mapping`. This exact bug class
-    /// (a hardcoded DPI-range tuple ignoring the real mapping data) has
-    /// shipped before.
+    /// trait default of `(100, 18000, 100)`.
     #[test]
     fn dpi_range_derives_from_profile_mapping_not_trait_default() {
         const TEST_MAPPING: &[(u16, u16)] = &[(50, 0x00), (100, 0x01), (150, 0x02)];
@@ -1151,10 +1056,6 @@ mod tests {
         assert_eq!(parse_firmware_version(&response).unwrap(), "1.12");
     }
 
-    // RgbProfile / ConfigurableRgb — spec-only (no Aerox/Rival 3 Gen 2/Prime
-    // Mini hardware available), verified against rivalcfg's aerox3.py /
-    // aerox5.py / rival3_gen2.py / prime_mini.py sources rather than guessed.
-
     use crate::device::aerox_gen2_rgb::{AEROX3_PROFILE, PRIME_MINI_PROFILE};
 
     #[test]
@@ -1251,8 +1152,7 @@ mod tests {
     }
 
     /// The Prime Mini's `RgbProfile` genuinely has no reactive color,
-    /// brightness or rainbow effect — confirmed against prime_mini.py's
-    /// settings dict, which lacks those keys entirely.
+    /// brightness or rainbow effect.
     #[test]
     fn prime_mini_rgb_profile_has_no_reactive_brightness_or_rainbow() {
         let rgb = PRIME_MINI_PROFILE.rgb.unwrap();

@@ -90,17 +90,12 @@ enum Commands {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // Initialize HID API
     let api = hidapi::HidApi::new()?;
 
-    // Handle commands that don't require opening a device
     if matches!(cli.command, Commands::ListDevices) {
         return list_devices(&api);
     }
 
-    // Open the first connected device whose profile supports the requested capability, rather
-    // than assuming a single hardcoded product — SteelSeries devices span multiple product
-    // families with disjoint capability sets (e.g. DPI is mouse-only, sidetone is headset-only).
     let device = match &cli.command {
         Commands::Dpi { .. } => open_matching(&api, |d| d.supports_dpi())?,
         Commands::PollingRate { .. } => open_matching(&api, |d| d.supports_polling_rate())?,
@@ -116,12 +111,11 @@ fn main() -> anyhow::Result<()> {
         Commands::BluetoothCallVolume { .. } => open_matching(&api, |d| d.supports_bluetooth_settings())?,
         Commands::Battery => open_matching(&api, |d| d.supports_battery())?,
         Commands::Save | Commands::Info => open_matching(&api, |_| true)?,
-        Commands::ListDevices => unreachable!(), // Handled before device opening
+        Commands::ListDevices => unreachable!(),
     };
 
     match cli.command {
         Commands::Dpi { values } => {
-            // Parse comma-separated DPI values
             let dpi_values: Result<Vec<u16>, _> = values
                 .split(',')
                 .map(|s| s.trim().parse::<u16>())
@@ -148,7 +142,6 @@ fn main() -> anyhow::Result<()> {
             println!("Set mic volume to: {}", level);
         }
         Commands::Equalizer { bands } => {
-            // Parse comma-separated gain values
             let gains: Result<Vec<f32>, _> = bands
                 .split(',')
                 .map(|s| s.trim().parse::<f32>())
@@ -201,16 +194,14 @@ fn main() -> anyhow::Result<()> {
                 println!("Firmware Version: {}", version);
             }
         }
-        Commands::ListDevices => unreachable!(), // Handled before device opening
+        Commands::ListDevices => unreachable!(),
     }
 
     Ok(())
 }
 
 /// Opens the first connected device (across every product ID declared by any
-/// `registry::PROFILES` entry) whose capabilities satisfy `predicate`. SteelSeries devices span
-/// multiple product families with disjoint capability sets (e.g. DPI is mouse-only, sidetone is
-/// headset-only), so a single hardcoded product ID can't serve every subcommand.
+/// `registry::PROFILES` entry) whose capabilities satisfy `predicate`.
 fn open_matching(
     api: &hidapi::HidApi,
     predicate: impl Fn(&registry::Device) -> bool,
@@ -250,7 +241,6 @@ fn list_devices(api: &hidapi::HidApi) -> anyhow::Result<()> {
             println!("Usage Page:      0x{:04x}", device.usage_page());
             println!("Usage:           0x{:04x}", device.usage());
 
-            // Highlight the configuration interface
             if device.usage_page() == 0xffc0 {
                 println!("                 ⮕ Configuration interface (used by ctrlgear-cli)");
             }

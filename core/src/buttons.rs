@@ -82,10 +82,7 @@ impl ButtonAction {
             ButtonAction::DpiSwitch => [0x30, 0x00, 0x00, 0x00, 0x00],
             ButtonAction::ScrollUp => [0x31, 0x00, 0x00, 0x00, 0x00],
             ButtonAction::ScrollDown => [0x32, 0x00, 0x00, 0x00, 0x00],
-            ButtonAction::Default => {
-                // This is a placeholder - the actual default will be filled in by the caller
-                [0xFF, 0x00, 0x00, 0x00, 0x00]
-            }
+            ButtonAction::Default => [0xFF, 0x00, 0x00, 0x00, 0x00],
         }
     }
 }
@@ -102,7 +99,6 @@ impl FromStr for ButtonAction {
             "scrolldown" | "scroll_down" => Ok(ButtonAction::ScrollDown),
             "default" => Ok(ButtonAction::Default),
             _ => {
-                // Try to parse as a button
                 if let Ok(button) = Button::from_str(&lower) {
                     Ok(ButtonAction::MouseButton(button))
                 } else {
@@ -132,7 +128,7 @@ impl ButtonMapping {
                 ButtonAction::MouseButton(Button::Button3),
                 ButtonAction::MouseButton(Button::Button4),
                 ButtonAction::MouseButton(Button::Button5),
-                ButtonAction::DpiSwitch, // Button6 defaults to DPI switch
+                ButtonAction::DpiSwitch,
             ],
         }
     }
@@ -161,10 +157,7 @@ impl ButtonMapping {
 
         for (i, action) in self.mappings.iter().enumerate() {
             let bytes = match action {
-                ButtonAction::Default => {
-                    // Use the actual default for this button
-                    defaults.mappings[i].encode()
-                }
+                ButtonAction::Default => defaults.mappings[i].encode(),
                 _ => action.encode(),
             };
             packet.extend_from_slice(&bytes);
@@ -283,12 +276,10 @@ mod tests {
     fn test_mapping_encode() {
         let mapping = ButtonMapping::default_mapping();
         let encoded = mapping.encode();
-        assert_eq!(encoded.len(), 30); // 6 buttons × 5 bytes
+        assert_eq!(encoded.len(), 30);
 
-        // Button 1 should be mapped to Button 1 (0x01)
         assert_eq!(encoded[0], 0x01);
 
-        // Button 6 should be DPI switch (0x30)
         assert_eq!(encoded[25], 0x30);
     }
 
@@ -297,7 +288,6 @@ mod tests {
         let mapping = ButtonMapping::from_string("button3=scrollup,button6=disabled").unwrap();
         assert_eq!(mapping.get(Button::Button3), &ButtonAction::ScrollUp);
         assert_eq!(mapping.get(Button::Button6), &ButtonAction::Disabled);
-        // Others should still be default
         assert_eq!(
             mapping.get(Button::Button1),
             &ButtonAction::MouseButton(Button::Button1)

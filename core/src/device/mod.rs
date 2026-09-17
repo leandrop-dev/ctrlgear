@@ -44,7 +44,6 @@ pub trait ConfigurableDpi {
 
     /// Get the valid DPI range for this device
     fn dpi_range(&self) -> (u16, u16, u16) {
-        // (min, max, step)
         (100, 18000, 100)
     }
 }
@@ -57,8 +56,7 @@ pub trait ConfigurablePollingRate {
 
 /// Common interface for headsets with adjustable sidetone (mic monitoring) level
 pub trait ConfigurableSidetone {
-    /// Set sidetone level. `level` is 0-3 (Off/Low/Medium/High), per SteelSeries's
-    /// 4-level Nova 7 protocol.
+    /// Set sidetone level. `level` is 0-3 (Off/Low/Medium/High).
     fn set_sidetone(&self, level: u8) -> Result<()>;
 }
 
@@ -84,9 +82,7 @@ pub trait ConfigurableEqualizer {
     fn set_equalizer_preset(&self, preset: u8) -> Result<()>;
 }
 
-/// Common interface for wireless devices with a configurable auto-sleep timer. Called "sleep
-/// timer" in this project's user-facing terminology, matching how the underlying setting
-/// ("inactive time" in the reference source) is presented to the user.
+/// Common interface for wireless devices with a configurable auto-sleep timer.
 pub trait ConfigurableSleepTimer {
     /// Minutes of inactivity before the device sleeps; 0-255
     fn set_sleep_timer(&self, minutes: u8) -> Result<()>;
@@ -111,8 +107,6 @@ pub trait WirelessDevice {
 }
 
 /// Reads a headset's ChatMix (game/chat volume balance) dial position.
-/// Deliberately not part of `WirelessDevice`/`battery_status`: chatmix must
-/// stay readable even when the headset itself reports offline, unlike battery.
 pub trait ChatMixReadable {
     fn chatmix_status(&self) -> Result<crate::protocol::ChatMixStatus>;
 }
@@ -129,11 +123,6 @@ pub trait ConfigurableButtons {
 }
 
 /// Common interface for mice with per-zone configurable RGB lighting.
-/// Introduced for the Aerox 3/Aerox 5/Rival 3 Gen 2/Prime Mini family (see
-/// [`crate::device::aerox_gen2_rgb`]) as the foundation every other
-/// RGB-bearing mouse family reuses; the zone-count/padding shape varies per
-/// family, so a device's [`crate::device::profile::RgbProfile`] declares its
-/// own zone table rather than assuming this family's 3-zone layout.
 pub trait ConfigurableRgb {
     /// Set one zone's static color (zone indices are device-specific; see
     /// the device's `RgbProfile::zones`).

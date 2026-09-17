@@ -1,9 +1,4 @@
 //! Discovery and instantiation of connected SteelSeries devices.
-//!
-//! This is the single place that knows which product IDs map to which
-//! [`DeviceProfile`]. Adding support for a new device means adding a
-//! `const DeviceProfile` (see `device::rival3_wireless` / `device::arctis_nova_7`
-//! for examples) and listing it in [`PROFILES`] — nowhere else.
 
 use crate::device::aerox_gen2_rgb::{
     AEROX3_PROFILE, AEROX5_PROFILE, PRIME_MINI_PROFILE, RIVAL3_GEN2_PROFILE,
@@ -39,8 +34,7 @@ fn profile_for(product_id: u16) -> Option<&'static DeviceProfile> {
 }
 
 /// A concrete, opened SteelSeries device: a [`ProfiledDevice`] plus the
-/// capability-flag/range accessors [`DeviceSummary`] needs, derived from the
-/// device's [`DeviceProfile`] rather than matched on a device type.
+/// capability-flag/range accessors [`DeviceSummary`] needs.
 pub struct Device {
     inner: ProfiledDevice,
 }
@@ -252,11 +246,7 @@ impl Device {
     }
 }
 
-/// How a device is physically reached. A device that can be reached over
-/// more than one transport at once (e.g. a wireless dongle plus a USB
-/// charging cable) legitimately produces one [`DeviceSummary`] per product
-/// ID — see [`discover`]'s per-product-ID dedup — so this exists to label
-/// each row rather than to collapse them.
+/// How a device is physically reached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionType {
     UsbWired,
@@ -266,11 +256,7 @@ pub enum ConnectionType {
 }
 
 /// Pure mapping from a HID enumeration's bus type + product ID to a
-/// [`ConnectionType`]. `hidapi::BusType::Usb` alone can't distinguish a
-/// direct USB cable from a 2.4GHz USB dongle receiver (both enumerate as
-/// USB at the bus level) — only the product ID can, which is why known
-/// wired-mode product IDs (e.g. [`ARCTIS_NOVA_7_WIRED_PRODUCT_ID`]) are
-/// matched explicitly here rather than derived generically.
+/// [`ConnectionType`].
 fn connection_type_for(bus: hidapi::BusType, product_id: u16) -> ConnectionType {
     match bus {
         hidapi::BusType::Bluetooth => ConnectionType::Bluetooth,
@@ -447,10 +433,6 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             connection_type,
                             battery: Some(status),
                             chatmix,
-                            // Battery succeeded, so surface a chatmix failure here instead
-                            // of dropping it silently — there's nothing more important to
-                            // report in this arm. When battery also fails (the other arm),
-                            // its error takes priority and the chatmix error is dropped.
                             note: chatmix_result.and_then(|r| r.err()).map(|e| e.to_string()),
                         },
                         Err(e) => DeviceSummary {
@@ -551,9 +533,7 @@ mod tests {
         assert_eq!(connection_type_for(hidapi::BusType::Usb, 0xffff), ConnectionType::Unknown);
     }
 
-    /// Guards against a silent product-ID collision across [`PROFILES`]: two
-    /// profiles claiming the same ID would make [`profile_for`] (and so
-    /// [`open`]) silently pick whichever comes first in the table.
+    /// Guards against a silent product-ID collision across [`PROFILES`].
     #[test]
     fn every_profile_product_id_is_unique() {
         let mut seen = std::collections::HashSet::new();
@@ -569,9 +549,7 @@ mod tests {
     }
 
     /// `supports_dpi`/`supports_polling_rate`/`supports_button_mapping`/
-    /// `dpi_range` must reflect each profile's actual capability fields —
-    /// this is what gates every capability-specific section in the GUI, so a
-    /// wrong flag here breaks the UI without a compile error.
+    /// `dpi_range` must reflect each profile's actual capability fields.
     #[test]
     fn rival3_wireless_profile_declares_mouse_capabilities() {
         assert!(RIVAL3_WIRELESS_PROFILE.dpi.is_some());

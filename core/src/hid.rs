@@ -13,12 +13,6 @@ pub struct SteelSeriesHid {
 
 impl SteelSeriesHid {
     /// Open a SteelSeries device on the correct interface
-    ///
-    /// SteelSeries devices have multiple HID interfaces. We need to open the
-    /// one matching `usage_page` (the device's configuration interface) and,
-    /// when `interface` is `Some`, also matching that HID interface number —
-    /// some device families need both to disambiguate the configuration
-    /// interface from others sharing the same usage page.
     pub fn open(
         api: &HidApi,
         vendor_id: u16,
@@ -61,23 +55,16 @@ impl SteelSeriesHid {
     }
 
     /// Write a HID report to the device
-    ///
-    /// # Arguments
-    /// * `report_type` - Type of HID report (Output or Feature)
-    /// * `command` - Command bytes to send
-    /// * `readback_length` - Optional number of bytes to read back after command
     pub fn write_command(
         &self,
         report_type: ReportType,
         command: &[u8],
         readback_length: Option<usize>,
     ) -> Result<Vec<u8>> {
-        // Prepare the buffer: [Report ID (0x00)] + command bytes
         let mut buf = Vec::with_capacity(1 + command.len());
-        buf.push(0x00); // Report ID
+        buf.push(0x00);
         buf.extend_from_slice(command);
 
-        // Send the command
         match report_type {
             ReportType::Output => {
                 self.device.write(&buf)?;
@@ -87,12 +74,10 @@ impl SteelSeriesHid {
             }
         }
 
-        // Sleep to prevent device overload
         if self.command_delay.as_millis() > 0 {
             std::thread::sleep(self.command_delay);
         }
 
-        // Read response if requested
         if let Some(len) = readback_length {
             let mut response = vec![0u8; len];
             let bytes_read = self.device.read_timeout(&mut response, 5000)?;
@@ -144,7 +129,6 @@ mod tests {
 
     #[test]
     fn test_hid_api_initialization() {
-        // Just verify we can create HidApi
         let api = HidApi::new();
         assert!(api.is_ok());
     }

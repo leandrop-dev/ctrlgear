@@ -12,7 +12,6 @@ pub enum ReportType {
 }
 
 /// Command delay in milliseconds to prevent device overload
-/// Based on rivalcfg's findings, some devices can hang if commands are sent too quickly
 pub const DEFAULT_COMMAND_DELAY_MS: u64 = 50;
 
 /// SteelSeries vendor ID
@@ -62,16 +61,8 @@ pub mod commands {
     /// Set Bluetooth call-volume mode
     pub const BLUETOOTH_CALL_VOLUME: u8 = 0xb3;
 
-    /// Save Bluetooth settings to device memory; distinct from the general
-    /// single-byte [`SAVE`], required specifically after setting
-    /// Bluetooth-when-powered-on
+    /// Save Bluetooth settings to device memory; distinct from the general single-byte [`SAVE`].
     pub const BLUETOOTH_SAVE: [u8; 2] = [0x06, 0x09];
-
-    // Aerox 3 / Aerox 5 / Rival 3 Gen 2 / Prime Mini family (see
-    // `crate::device::aerox_gen2_rgb`). This family's command bytes differ
-    // from Rival 3 Wireless's for the same conceptual settings (e.g.
-    // sensitivity is `0x2D` here vs. [`SENSITIVITY`]'s `0x20`), verified
-    // against rivalcfg's `aerox3.py`/`aerox5.py`/`rival3_gen2.py`/`prime_mini.py`.
 
     /// Set DPI/sensitivity presets (Aerox/Rival 3 Gen 2/Prime Mini family)
     pub const SENSITIVITY_AEROX_GEN2: u8 = 0x2D;
@@ -190,12 +181,12 @@ mod tests {
 
     #[test]
     fn test_battery_status_parsing() {
-        let data = [75, 0, 1]; // 75%, charging
+        let data = [75, 0, 1];
         let status = BatteryStatus::from_response(&data).unwrap();
         assert_eq!(status.level, 75);
         assert!(status.is_charging);
 
-        let data = [50, 0, 0]; // 50%, not charging
+        let data = [50, 0, 0];
         let status = BatteryStatus::from_response(&data).unwrap();
         assert_eq!(status.level, 50);
         assert!(!status.is_charging);

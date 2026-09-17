@@ -7,19 +7,14 @@
 //! [`crate::device::profile::ProfiledDevice`] returns
 //! [`Error::Unsupported`] for them generically.
 //!
-//! Protocol verified against the connected hardware (product ID `0x22a1`,
-//! reported on interface 3 / usage page `0xffc0`) and cross-checked against
-//! the community-maintained implementation in
-//! [HeadsetControl](https://github.com/Sapd/HeadsetControl)
-//! (`lib/devices/steelseries_arctis_nova_7.hpp`, `protocols/steelseries_protocol.hpp`).
+//! Protocol verified against the connected hardware and cross-checked
+//! against a community-maintained implementation.
 //!
-//! The Arctis Nova 7 family spans two battery-report protocols across its 12
-//! known product IDs: "Gen 2" units (e.g. `0x22a1`) report battery as a
-//! percentage directly, while older units (e.g. `0x2202`) report a discrete
-//! 0-4 level that needs scaling to percent. Both are implemented, as
-//! [`ARCTIS_NOVA_7_PROFILE`] and [`ARCTIS_NOVA_7_DISCRETE_BATTERY_PROFILE`]
-//! respectively — see [`PERCENTAGE_BATTERY_PRODUCT_IDS`] and
-//! [`DISCRETE_BATTERY_PRODUCT_IDS`] for the full ID lists.
+//! Two battery-report protocols are implemented across this family's 12
+//! known product IDs, as [`ARCTIS_NOVA_7_PROFILE`] and
+//! [`ARCTIS_NOVA_7_DISCRETE_BATTERY_PROFILE`] — see
+//! [`PERCENTAGE_BATTERY_PRODUCT_IDS`] and [`DISCRETE_BATTERY_PRODUCT_IDS`]
+//! for the full ID lists.
 
 use crate::device::profile::{
     BatteryProfile, BluetoothProfile, ChatMixProfile, DeviceProfile, EqualizerProfile,
@@ -38,14 +33,7 @@ pub const PERCENTAGE_BATTERY_PRODUCT_IDS: &[u16] = &[0x22a1, 0x227e, 0x2258, 0x2
 pub const DISCRETE_BATTERY_PRODUCT_IDS: &[u16] = &[0x2202, 0x2206, 0x223a, 0x227a, 0x22a4];
 
 /// Product ID reported when the same headset is connected directly via a
-/// USB cable (e.g. for charging) instead of the wireless dongle. Confirmed
-/// on this machine's hardware (`lsusb`/`ctrlgear-cli list-devices`): a
-/// second `1038:22a0` interface appears alongside `1038:22a1` while the
-/// headset is plugged in both ways at once, also exposing a `0xffc0`
-/// configuration interface — same protocol shape, different product ID.
-/// Used today only to label connection type
-/// (`registry::ConnectionType::UsbWired`); not yet wired into `is_supported`/
-/// `open`, so it isn't treated as a configurable device in its own right.
+/// USB cable instead of the wireless dongle.
 pub const WIRED_PRODUCT_ID: u16 = 0x22a0;
 
 /// Status request command byte; the device replies with a status report
@@ -112,11 +100,9 @@ fn parse_status_discrete(response: &[u8]) -> Result<BatteryStatus> {
 }
 
 /// Parses chatmix (game/chat volume balance) from the same status report
-/// `parse_status` reads. Deliberately performs its own HID round-trip
-/// against the identical 0xb0 command as battery_status, rather than
-/// sharing one read — see `ChatMixProfile`'s doc comment for why. Unlike
-/// `parse_status`, this must NOT gate on the offline sentinel (response[3]):
-/// chatmix stays valid even when the headset itself reports offline.
+/// `parse_status` reads; unlike `parse_status`, does not gate on the
+/// offline sentinel — chatmix stays valid even when the headset reports
+/// offline.
 fn parse_chatmix(response: &[u8]) -> Result<ChatMixStatus> {
     if response.len() < 6 {
         return Err(Error::InvalidParameter(
@@ -200,8 +186,6 @@ mod tests {
 
     #[test]
     fn parse_chatmix_reads_game_and_chat_percent_even_when_offline() {
-        // Byte 3 (0x00) is the offline sentinel `parse_status_percentage` rejects on —
-        // this fixture proves `parse_chatmix` ignores it and still parses.
         let response = [0xb0, 0x00, 75, 0x00, 60, 40];
         let status = parse_chatmix(&response).unwrap();
         assert_eq!(status.game_percent, 60);
@@ -243,9 +227,7 @@ mod tests {
         assert_eq!(status.level, 100);
     }
 
-    /// Narrower, file-local sanity check on just these two lists —
-    /// `registry::tests::every_profile_product_id_is_unique` already checks
-    /// no duplicates across all of `PROFILES`.
+    /// Narrower, file-local sanity check on just these two lists.
     #[test]
     fn percentage_and_discrete_battery_product_ids_do_not_overlap() {
         for id in PERCENTAGE_BATTERY_PRODUCT_IDS {

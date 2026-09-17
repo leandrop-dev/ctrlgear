@@ -1,16 +1,7 @@
 //! Routes a connected headset's ChatMix dial to two virtual PipeWire sinks
-//! ("CtrlGear Game" / "CtrlGear Chat") that the user manually assigns apps
-//! to, continuously syncing each sink's volume to the dial's
+//! ("CtrlGear Game" / "CtrlGear Chat") on a dedicated persistent worker thread
+//! spawned once by [`spawn`], syncing each sink's volume to the dial's
 //! `game_percent`/`chat_percent`.
-//!
-//! Runs entirely on a dedicated, persistent worker thread spawned once by
-//! [`spawn`] for the app's whole lifetime — never spawned/killed per toggle,
-//! which would otherwise let a rapid toggle-off/toggle-on race two workers
-//! against the same fixed node names. The worker starts idle (no PipeWire
-//! objects, no HID access) and only begins polling after [`WorkerCommand::Enable`].
-//!
-//! PipeWire objects (`MainLoopRc`/`ContextRc`/`CoreRc`/`Node`) are thread-affine
-//! and are created on and never leave this worker thread.
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -49,32 +40,15 @@ pub enum WorkerCommand {
 enum Action {
     NoOp,
     CreateSinksAndPush,
-    /// Not produced by [`next_action`] itself (a failed creation attempt
-    /// immediately becomes `NoOp` on the following tick, per its rules) —
-    /// kept as part of `Action` because the tick loop's own creation-attempt
-    /// handling conceptually passes through this outcome after an actually
-    /// failed [`PwContext::create_sinks`] call.
+    /// Not produced by [`next_action`] itself; kept for the tick loop's own
+    /// conceptual state mapping.
     #[allow(dead_code)]
     CreateSinksFailed,
     PushVolumes,
 }
 
-/// Pure decision function for a single poll tick. No I/O — safe to unit test
-/// directly, following this codebase's pure-decision-function-plus-thin-wrapper
-/// pattern (see `gui/src/main.rs`'s `low_battery_transitions`/`check_low_battery`).
-///
-/// - No device, no sinks: `NoOp`.
-/// - Device present, no sinks, no prior failure: `CreateSinksAndPush` — this
-///   is what lets a device that connects after the toggle was switched on
-///   still activate the feature, since this runs every tick.
-/// - Device present, no sinks, prior failure already recorded: `NoOp` — don't
-///   retry-spam every 100ms. The caller clears the failure flag whenever the
-///   held device transitions from absent to present, so a real device
-///   state change (e.g. losing and regaining the device) still retries.
-/// - Device present, sinks exist: `PushVolumes`, regardless of the failure
-///   flag (irrelevant once sinks already exist).
-/// - Device NOT present, sinks exist: `NoOp` — sinks are only destroyed by
-///   `Disable`/`Shutdown`, never just because the device disconnected.
+/// Pure decision function for a single poll tick, given device/sink/failure
+/// state.
 fn next_action(device_present: bool, sinks_exist: bool, sinks_failed: bool) -> Action {
     match (device_present, sinks_exist, sinks_failed) {
         (false, _, _) => Action::NoOp,
@@ -106,10 +80,8 @@ struct Sinks {
     chat: pw::node::Node,
 }
 
-/// The worker thread's PipeWire connection. Created once, lazily reused
-/// across `Enable`/`Disable` cycles for the worker's lifetime — a connected
-/// client with no nodes is invisible to `wpctl status`, so keeping it open
-/// while idle doesn't violate "zero nodes / no polling" while disabled.
+/// The worker thread's PipeWire connection, reused across `Enable`/`Disable`
+/// cycles.
 struct PwContext {
     mainloop: pw::main_loop::MainLoopRc,
     core: pw::core::CoreRc,
@@ -128,16 +100,13 @@ impl PwContext {
         Ok(Self { mainloop, core })
     }
 
-    /// Non-blocking pump of the PipeWire loop, so bound listeners/proxies get
-    /// their events processed between ticks without blocking this thread.
+    /// Non-blocking pump of the PipeWire loop.
     fn pump(&self) {
         self.mainloop.loop_().iterate(pw::loop_::Timeout::None);
     }
 
     /// Pumps the loop in bounded steps until a `core.sync` reply for this
-    /// roundtrip is seen or `max_wait` elapses — never blocks indefinitely,
-    /// since this worker also owns the tick loop that must keep servicing
-    /// `Disable`/`Shutdown`.
+    /// roundtrip is seen or `max_wait` elapses.
     fn roundtrip(&self, max_wait: Duration) {
         let done = Rc::new(Cell::new(false));
         let done_clone = done.clone();
@@ -160,9 +129,7 @@ impl PwContext {
     }
 
     /// Creates a single plain `Audio/Sink` node via the `adapter` factory
-    /// backed by `support.null-audio-sink` — the same mechanism PipeWire's
-    /// own virtual-sink config snippets and `pw-loopback`/`module-null-sink`
-    /// use, which produces a real `Audio/Sink` node (not a `Filter`).
+    /// backed by `support.null-audio-sink`.
     fn create_one_sink(&self, name: &str) -> Option<pw::node::Node> {
         self.core
             .create_object::<pw::node::Node>(
@@ -247,17 +214,13 @@ impl PwContext {
     }
 }
 
-/// Reads the held device's ChatMix status under [`crate::HID_BUS_LOCK`] (held
-/// for the full HID transaction), so this never interleaves with the
-/// existing battery-poll timer's own HID traffic against the same device.
+/// Reads the held device's ChatMix status under [`crate::HID_BUS_LOCK`].
 fn read_chatmix(device: &Device) -> Option<ctrlgear_core::protocol::ChatMixStatus> {
     let _guard = crate::HID_BUS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     device.chatmix_status().ok()
 }
 
-/// Reads the current ChatMix status and pushes it to both sinks. Returns
-/// `false` if the HID read failed, so the caller can drop the held device to
-/// force rediscovery next tick — sink volumes are left at their last value.
+/// Reads the current ChatMix status and pushes it to both sinks.
 fn read_and_push(pw_ctx: &PwContext, sinks: &Sinks, device: &Device) -> bool {
     match read_chatmix(device) {
         Some(status) => {
@@ -269,14 +232,8 @@ fn read_and_push(pw_ctx: &PwContext, sinks: &Sinks, device: &Device) -> bool {
     }
 }
 
-/// Spawns the persistent chatmix worker thread and returns the command
-/// channel to it plus a receiver that gets a single message right before the
-/// thread exits after `Shutdown` (used for `tray.on_quit`'s bounded wait).
-///
-/// `startup_error` is written whenever sink creation fails, whether from an
-/// ordinary manual toggle-on or from the automatic startup `Enable` sent
-/// when the setting was persisted as on — read (and cleared) once by
-/// `gui/src/main.rs`'s `on_settings_opened` handler.
+/// Spawns the persistent chatmix worker thread; returns the command channel
+/// and a receiver that signals once before the thread exits after `Shutdown`.
 pub fn spawn(startup_error: Arc<Mutex<Option<String>>>) -> (mpsc::Sender<WorkerCommand>, mpsc::Receiver<()>) {
     let (cmd_tx, cmd_rx) = mpsc::channel();
     let (done_tx, done_rx) = mpsc::channel();
@@ -294,16 +251,6 @@ fn report_failure(startup_error: &Arc<Mutex<Option<String>>>, message: String) {
 
 /// Drains every [`WorkerCommand`] buffered on `cmd_rx` since the last tick
 /// and reduces the batch to `(latest_toggle, should_shutdown)`.
-///
-/// `Shutdown` is reflected in `should_shutdown` regardless of where in the
-/// batch it appears or what follows it — it must never be silently
-/// overridden by a rogue trailing `Enable`/`Disable` in the same drain pass.
-/// `Enable`/`Disable` are order-sensitive: `latest_toggle` (`Some(true)` for
-/// the former, `Some(false)` for the latter) is overwritten by each one as
-/// it's processed in arrival order, so e.g. `Enable, Disable, Enable` in one
-/// batch correctly reduces to `Some(true)` rather than collapsing to
-/// "disabled because a Disable was seen somewhere in the batch". `None`
-/// means no `Enable`/`Disable` was seen at all.
 fn drain_commands(cmd_rx: &mpsc::Receiver<WorkerCommand>) -> (Option<bool>, bool) {
     let mut latest_toggle: Option<bool> = None;
     let mut should_shutdown = false;
@@ -336,8 +283,6 @@ fn run(cmd_rx: mpsc::Receiver<WorkerCommand>, done_tx: mpsc::Sender<()>, startup
     let mut sinks_failed = false;
 
     loop {
-        // Idle: block waiting for the next command — no polling, no PipeWire
-        // objects created, no HID access until `Enable` arrives.
         match cmd_rx.recv() {
             Ok(WorkerCommand::Enable) => {}
             Ok(WorkerCommand::Disable) => continue,
@@ -350,7 +295,6 @@ fn run(cmd_rx: mpsc::Receiver<WorkerCommand>, done_tx: mpsc::Sender<()>, startup
             }
         }
 
-        // Enabled: poll roughly every 100ms until Disable/Shutdown.
         loop {
             let (latest_toggle, should_shutdown) = drain_commands(&cmd_rx);
 
@@ -373,8 +317,6 @@ fn run(cmd_rx: mpsc::Receiver<WorkerCommand>, done_tx: mpsc::Sender<()>, startup
             if held_device.is_none() {
                 let discovered = discover_chatmix_device();
                 if discovered.is_some() {
-                    // A device (re)appeared: a real state change, so allow a
-                    // previously-failed creation attempt to retry.
                     sinks_failed = false;
                 }
                 held_device = discovered;

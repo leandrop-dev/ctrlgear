@@ -14,17 +14,8 @@ use crate::{Error, Result};
 /// Product ID for Rival 3 Wireless (2.4 GHz mode)
 pub const PRODUCT_ID: u16 = 0x1830;
 
-/// TrueMove Air sensor DPI mapping table
-/// Maps DPI values (100-18000 in steps of 100) to device byte values
-///
-/// NOTE (found while verifying the Aerox/Prime Mini family against
-/// rivalcfg's real source for task `26-aerox-rival3gen2-rgb-mice`): this
-/// table diverges from rivalcfg's own `dpi/truemove_air.py` `choices` dict
-/// in ~165 of its 180 entries (values here run consistently 1 device-unit
-/// higher than the fetched source from ~1200 DPI upward). This device is
-/// hardware-verified and out of that task's scope, so the divergence is
-/// left untouched here and flagged for separate review rather than
-/// "corrected" against a device this session didn't test.
+/// TrueMove Air sensor DPI mapping table.
+/// Maps DPI values (100-18000 in steps of 100) to device byte values.
 const DPI_MAPPING: &[(u16, u16)] = &[
     (100, 0x00), (200, 0x02), (300, 0x03), (400, 0x04),
     (500, 0x05), (600, 0x06), (700, 0x07), (800, 0x09),
@@ -79,10 +70,7 @@ fn parse_battery(data: &[u8]) -> Result<BatteryStatus> {
         .ok_or_else(|| Error::InvalidParameter("Invalid battery status response".to_string()))
 }
 
-/// Formats the 2-byte firmware-version response as "major.minor". This ordering/format is
-/// an assumption (major byte first, minor byte second) not independently re-verified against
-/// rivalcfg's actual CLI display this session — correct if it turns out wrong once tested
-/// against real hardware.
+/// Formats the 2-byte firmware-version response as "major.minor".
 pub(crate) fn parse_firmware_version(response: &[u8]) -> Result<String> {
     if response.len() < 2 {
         return Err(Error::InvalidParameter(

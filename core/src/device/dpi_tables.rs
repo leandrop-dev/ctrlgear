@@ -1,20 +1,8 @@
 //! Shared DPI-value -> device-value mapping tables for sensors used by more
 //! than one device family.
-//!
-//! Each table is transcribed directly from rivalcfg (WTFPL) via `gh api`
-//! (`rivalcfg/devices/dpi/truemove_core.py`, `truemove_air.py`), not
-//! re-derived or guessed, and cross-checked programmatically against the
-//! fetched source for entry count and boundary values before being pasted
-//! here.
 
 /// TrueMove Core sensor DPI mapping: 200-8500 DPI in 100-DPI steps, used by
-/// the Aerox 3 (`rivalcfg/devices/aerox3.py`). Also used by the Rival 3 Gen
-/// 2's sensor, though that device's actual `sensitivity` command
-/// (`multidpi_range_choice_xy`, command `0x34`) encodes an independent X/Y
-/// DPI pair per preset — a shape [`crate::device::profile::DpiProfile`]
-/// doesn't support, so [`crate::device::aerox_gen2_rgb::RIVAL3_GEN2_PROFILE`]
-/// leaves `dpi: None` rather than emit a wrong-shaped command; see that
-/// module's doc comment.
+/// the Aerox 3's sensor.
 pub const TRUEMOVE_CORE_MAPPING: &[(u16, u16)] = &[
     (200, 0x04), (300, 0x06), (400, 0x08), (500, 0x0B),
     (600, 0x0D), (700, 0x0F), (800, 0x12), (900, 0x14),
@@ -40,19 +28,7 @@ pub const TRUEMOVE_CORE_MAPPING: &[(u16, u16)] = &[
 ];
 
 /// TrueMove Air sensor DPI mapping: 100-18000 DPI in 100-DPI steps, used by
-/// the Aerox 5 (`rivalcfg/devices/aerox5.py`, which imports
-/// `dpi.truemove_air` — *not* `truemove_core`, correcting an earlier
-/// assumption in this feature's task notes that Aerox 5 shared Aerox 3's
-/// sensor/range). Verified independently against `dpi/truemove_air.py`
-/// rather than reused from [`crate::device::rival3_wireless`]'s own
-/// `DPI_MAPPING`: that table (used by the already-shipped, hardware-verified
-/// Rival 3 Wireless) was found during this task's research to diverge from
-/// rivalcfg's real `truemove_air.choices` in ~165 of its 180 entries (values
-/// consistently 1 device-unit higher from ~1200 DPI upward). That divergence
-/// predates this task, is out of its scope (Rival 3 Wireless is
-/// hardware-verified and unrelated to the Aerox/Prime Mini family being
-/// added here), and is left untouched — flagged instead for separate
-/// review.
+/// the Aerox 5's sensor.
 pub const TRUEMOVE_AIR_MAPPING: &[(u16, u16)] = &[
     (100, 0x00), (200, 0x02), (300, 0x03), (400, 0x04),
     (500, 0x05), (600, 0x06), (700, 0x07), (800, 0x09),
@@ -101,16 +77,7 @@ pub const TRUEMOVE_AIR_MAPPING: &[(u16, u16)] = &[
     (17700, 0xD2), (17800, 0xD3), (17900, 0xD5), (18000, 0xD6),
 ];
 
-/// Prime Mini DPI mapping: 50-18000 DPI in 50-DPI steps
-/// (`rivalcfg/devices/prime_mini.py`'s `input_range: [50, 18000, 50]`),
-/// linear formula `byte_value = dpi / 50` (`output_range: [0x01, 0x0168,
-/// 1]`), expanded to a full lookup table — computed directly from the
-/// verified formula/ranges (not guessed) — so the Prime Mini's DPI encoding
-/// uses the exact same lookup-table code path
-/// ([`crate::device::profile::DpiProfile`]/`set_dpi`) as every other
-/// device, with `value_width: 2` the only thing that differs (its raw value
-/// runs up to `0x0168`, needing both bytes; see
-/// [`crate::device::profile::DpiProfile::value_width`]).
+/// Prime Mini DPI mapping: 50-18000 DPI in 50-DPI steps.
 pub const PRIME_MINI_DPI_MAPPING: &[(u16, u16)] = &[
     (50, 0x01), (100, 0x02), (150, 0x03), (200, 0x04),
     (250, 0x05), (300, 0x06), (350, 0x07), (400, 0x08),
