@@ -1,6 +1,6 @@
-# CtrlGear
+![Control Gear](Control-Gear-banner.jpg "Control Gear")
 
-A Rust utility for managing SteelSeries gaming peripherals — CLI and desktop GUI. Unofficial; not affiliated with or endorsed by SteelSeries.
+> A Rust utility for managing SteelSeries/Razer/Logitech/HyperX/Keychron gaming peripherals — CLI and desktop GUI. Unofficial; not affiliated with or endorsed by SteelSeries/Razer/Logitech/HyperX/Keychron.
 
 ## Features
 
@@ -164,12 +164,27 @@ Desktop interface using [Slint](https://slint.dev); calls the same `ctrlgear-cor
 
 ## Supported Devices
 
-| Device | Product ID | DPI | Polling Rate | Buttons | Battery | RGB |
-|--------|------------|-----|--------------|---------|---------|-----|
-| **Rival 3 Wireless** | 0x1830 | ✅ 100-18000 | ✅ | ✅ 6 buttons | ✅ | ❌ |
-| **Arctis Nova 7 Wireless** | 0x22a1 | n/a | n/a | n/a | ✅ | ❌ |
+### Mice
 
-Other Arctis Nova 7 product IDs (older discrete 0-4 battery firmware, Nova 7X variants) are not implemented — see `core/src/device/arctis_nova_7.rs`.
+| Device | Product ID | DPI | Polling Rate | Buttons | RGB | Battery |
+|--------|------------|-----|--------------|---------|-----|---------|
+| **Rival 3 Wireless** | 0x1830 | ✅ 100-18000 | ✅ | ✅ 6 buttons | ❌ | ✅ |
+| **Aerox 3** | 0x1836 | ✅ 200-8500 | ✅ | ✅* | ✅ | ❌ (wired only) |
+| **Aerox 5** | 0x1850 | ✅ 100-18000 | ✅ | ✅* | ✅ | ❌ (wired only) |
+| **Rival 3 Gen 2** | 0x1870 | ⚠️ | ✅ | ✅* | ✅ | ❌ (wired only) |
+| **Prime Mini** | 0x184D | ✅ 50-18000 | ✅ | ✅* | ✅ (single zone) | ❌ (wired only) |
+
+\* Button mapping on the Aerox 3/5, Rival 3 Gen 2, and Prime Mini reuses the Rival 3 Wireless's 6-slot encoding, which does not yet reflect these devices' real per-model button layout — see the `BUTTONS` doc comment in `core/src/device/aerox_gen2_rgb.rs`.
+
+Rival 3 Gen 2's DPI is marked ⚠️ because its command uses a dual-axis (X/Y) value shape the current `DpiProfile` model doesn't support yet — see `core/src/device/aerox_gen2_rgb.rs::RIVAL3_GEN2_PROFILE`.
+
+### Headsets
+
+| Device | Product ID | Battery | ChatMix | Sidetone | Mic Mute LED | Mic Volume | Equalizer | Sleep Timer | Volume Limiter | Bluetooth |
+|--------|------------|---------|---------|----------|--------------|------------|-----------|--------------|-----------------|-----------|
+| **Arctis Nova 7** | 0x22a1 (+ 11 more) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ 10-band, 4 presets | ✅ | ✅ | ✅ |
+
+The Arctis Nova 7 family covers 12 known product IDs across two battery-report protocols (percentage vs. discrete 0-4) — see `PERCENTAGE_BATTERY_PRODUCT_IDS` / `DISCRETE_BATTERY_PRODUCT_IDS` in `core/src/device/arctis_nova_7.rs` for the full list. It has no DPI, polling rate, or button-mapping concepts.
 
 **Legend:**
 - ✅ Supported
@@ -201,12 +216,13 @@ WTFPL - Do What The Fuck You Want To Public License
 
 ## Contributing
 
-Contributions are welcome! To add support for additional SteelSeries devices:
+Contributions are welcome! To add support for an additional SteelSeries device:
 
-1. Create a new module in `core/src/device/`
-2. Implement the appropriate traits (`SteelSeriesDevice`, `ConfigurableDpi`, etc.)
-3. Add the device's protocol commands and DPI mapping table
-4. Update the CLI (and GUI, if applicable) to support device auto-detection
+1. Declare a `const DeviceProfile` for it in a new (or existing family) module under `core/src/device/` — devices are data, not per-device trait implementations; `ProfiledDevice` (`core/src/device/profile.rs`) implements every capability generically from whichever profile fields are set
+2. Add the device's protocol commands and DPI/RGB/equalizer tables as `const`s alongside its profile
+3. Register the profile in `core/src/registry.rs::PROFILES` — the CLI and GUI both pick it up automatically, no further wiring needed
+
+See the `add-steelseries-device` skill (`.mallet/skills/add-steelseries-device/`) for the full walkthrough.
 
 ## Troubleshooting
 

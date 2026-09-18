@@ -51,10 +51,17 @@ component Sidebar inherits Rectangle {
         padding: 16px;
         spacing: 6px;
 
-        HorizontalLayout {
-            spacing: 8px;
-            Image { source: @image-url("../assets/app-icon.svg"); width: 26px; height: 26px; }
-            Text { text: "CtrlGear"; font-size: 15px; font-weight: 800; vertical-alignment: center; }
+        Rectangle {
+            height: 96px;
+            Image {
+                source: Palette.color-scheme == ColorScheme.dark
+                    ? @image-url("../assets/app-icon-mono-light.svg")
+                    : @image-url("../assets/app-icon-mono-dark.svg");
+                width: 96px;
+                height: 96px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+            }
         }
 
         Rectangle { height: 16px; }
