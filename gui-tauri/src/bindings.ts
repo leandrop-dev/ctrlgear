@@ -11,6 +11,25 @@ export const commands = {
 	 *  from "no devices connected".
 	 */
 	listDevices: () => typedError<DeviceSummary[], string>(__TAURI_INVOKE("list_devices")),
+	/**  Sets a device's DPI presets. Mirrors `gui/src/main.rs`'s `apply_dpi`. */
+	setDpi: (productId: number, values: number[]) => typedError<null, string>(__TAURI_INVOKE("set_dpi", { productId, values })),
+	/**  Sets a device's polling rate. Mirrors `gui/src/main.rs`'s `apply_polling_rate`. */
+	setPollingRate: (productId: number, hz: number) => typedError<null, string>(__TAURI_INVOKE("set_polling_rate", { productId, hz })),
+	/**
+	 *  Sets a device's button mapping. `actions` is one keyword per
+	 *  [`Button::all`] slot. Mirrors `gui/src/main.rs`'s `apply_button_mapping`.
+	 */
+	setButtonMapping: (productId: number, actions: string[]) => typedError<null, string>(__TAURI_INVOKE("set_button_mapping", { productId, actions })),
+	/**
+	 *  The button-mapping action choices for populating the frontend's
+	 *  dropdowns. Pure/static — no HID access.
+	 */
+	buttonActionChoices: () => __TAURI_INVOKE<ButtonActionChoice[]>("button_action_choices"),
+	/**
+	 *  One label per physical button slot, for the frontend's button-mapping
+	 *  rows. Pure/static — no HID access.
+	 */
+	buttonSlotLabels: () => __TAURI_INVOKE<string[]>("button_slot_labels"),
 };
 
 /** Events */
@@ -25,6 +44,11 @@ export type BatteryStatus = {
 	level: number,
 	/**  Whether the device is currently charging */
 	isCharging: boolean,
+};
+
+export type ButtonActionChoice = {
+	keyword: string,
+	label: string,
 };
 
 /**  ChatMix (game/chat volume balance) dial position for wireless headsets. */
@@ -71,6 +95,10 @@ export type DeviceSummary = {
 	 */
 	rgbDefaultLightingChoices: string[],
 	dpiRange: [number, number, number] | null,
+	/**  Maximum number of DPI presets accepted; `None` when `supports_dpi` is `false`. */
+	dpiMaxPresets: number | null,
+	/**  Valid polling-rate choices in Hz; empty when `supports_polling_rate` is `false`. */
+	pollingRateChoices: number[],
 	connectionType: ConnectionType,
 	battery: BatteryStatus | null,
 	chatmix: ChatMixStatus | null,

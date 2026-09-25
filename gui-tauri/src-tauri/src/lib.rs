@@ -1,4 +1,5 @@
 mod commands;
+mod device_commands;
 mod events;
 
 use events::DeviceListUpdated;
@@ -11,7 +12,14 @@ const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5 * 60
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri_specta::Builder::<tauri::Wry>::new()
-        .commands(collect_commands![commands::list_devices])
+        .commands(collect_commands![
+            commands::list_devices,
+            device_commands::set_dpi,
+            device_commands::set_polling_rate,
+            device_commands::set_button_mapping,
+            device_commands::button_action_choices,
+            device_commands::button_slot_labels,
+        ])
         .events(collect_events![DeviceListUpdated]);
 
     #[cfg(debug_assertions)]

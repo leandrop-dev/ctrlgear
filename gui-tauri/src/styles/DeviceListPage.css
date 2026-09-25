@@ -57,6 +57,12 @@
   border-radius: 12px;
   background: linear-gradient(120deg, #4a5568, #2d3748);
   color: #ffffff;
+  cursor: pointer;
+}
+
+.device-card:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.6);
+  outline-offset: 2px;
 }
 
 .device-card--unsupported {

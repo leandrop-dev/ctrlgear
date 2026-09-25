@@ -1,14 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { commands, events, type DeviceSummary } from "../bindings";
+import type { DeviceSummary } from "../bindings";
 import { batteryText, connectionLabel, displayName, productIdLabel } from "../lib/deviceLabels";
 import "../styles/DeviceListPage.css";
 
-function DeviceCard({ device }: { device: DeviceSummary }) {
+function DeviceCard({ device, onSelect }: { device: DeviceSummary; onSelect: () => void }) {
   const name = displayName(device.name);
   const badge = connectionLabel(device.connectionType);
 
   return (
-    <li className={`device-card${device.supported ? "" : " device-card--unsupported"}`}>
+    <li
+      className={`device-card${device.supported ? "" : " device-card--unsupported"}`}
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+    >
       <div className="device-card__avatar">{name.charAt(0).toUpperCase()}</div>
       <div className="device-card__info">
         <div className="device-card__row">
@@ -34,52 +44,19 @@ function DeviceCard({ device }: { device: DeviceSummary }) {
   );
 }
 
-export function DeviceListPage() {
-  const [devices, setDevices] = useState<DeviceSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // Bumped by every refresh request and every pushed update; a refresh
-  // response only applies if nothing newer arrived while it was in flight.
-  const generation = useRef(0);
-  // Refresh calls only (not pushed events), so `loading` clears when the
-  // latest refresh settles and never sticks when an event lands mid-flight.
-  const latestRefreshId = useRef(0);
-
-  const refresh = useCallback(() => {
-    const requestGeneration = ++generation.current;
-    const refreshId = ++latestRefreshId.current;
-    setLoading(true);
-    commands
-      .listDevices()
-      .then((result) => {
-        if (requestGeneration !== generation.current) return;
-        if (result.status === "ok") {
-          setDevices(result.data);
-          setError(null);
-        } else {
-          setError(result.error);
-        }
-      })
-      .catch((e) => {
-        if (requestGeneration === generation.current) setError(String(e));
-      })
-      .finally(() => {
-        if (refreshId === latestRefreshId.current) setLoading(false);
-      });
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    const unlisten = events.deviceListUpdated.listen((event) => {
-      generation.current++;
-      setDevices(event.payload);
-      setError(null);
-    });
-    return () => {
-      unlisten.then((f) => f());
-    };
-  }, [refresh]);
-
+export function DeviceListPage({
+  devices,
+  loading,
+  error,
+  refresh,
+  onSelectDevice,
+}: {
+  devices: DeviceSummary[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => void;
+  onSelectDevice: (productId: number) => void;
+}) {
   return (
     <section className="device-list-page">
       <header className="device-list-page__header">
@@ -105,7 +82,11 @@ export function DeviceListPage() {
       {devices.length > 0 && (
         <ul className="device-list-page__list">
           {devices.map((device) => (
-            <DeviceCard key={device.productId} device={device} />
+            <DeviceCard
+              key={device.productId}
+              device={device}
+              onSelect={() => onSelectDevice(device.productId)}
+            />
           ))}
         </ul>
       )}

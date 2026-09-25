@@ -30,3 +30,11 @@ export function productIdLabel(productId: number): string {
 export function batteryText(percent: number, charging: boolean): string {
   return charging ? `Charging ⚡ ${percent}%` : `${percent}%`;
 }
+
+/** Formats a device's valid DPI range and preset limit as help text for the detail page. */
+export function dpiHelpText(dpiRange: [number, number, number] | null, dpiMaxPresets: number | null): string {
+  if (dpiRange === null) return "";
+  const [min, max, step] = dpiRange;
+  const presets = dpiMaxPresets !== null ? `, up to ${dpiMaxPresets} presets` : "";
+  return `Supports ${min}–${max} DPI in steps of ${step}${presets}.`;
+}

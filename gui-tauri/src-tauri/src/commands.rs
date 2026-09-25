@@ -5,10 +5,11 @@ use ctrlgear_core::registry::{self, DeviceSummary};
 use hidapi::{HidApi, HidError};
 use std::sync::Mutex;
 
-/// Serializes every `discover()` call against the SteelSeries HID bus, so a
-/// command-triggered and a poll-triggered discover never overlap. Mirrors
-/// `HID_BUS_LOCK` in the Slint GUI's `gui/src/main.rs`.
-static HID_BUS_LOCK: Mutex<()> = Mutex::new(());
+/// Serializes every HID transaction (discover or device write) against the
+/// SteelSeries bus, so no two commands (or a command and the poll loop) ever
+/// talk to the bus at once. Mirrors `HID_BUS_LOCK` in the Slint GUI's
+/// `gui/src/main.rs`. Shared with [`crate::device_commands`].
+pub(crate) static HID_BUS_LOCK: Mutex<()> = Mutex::new(());
 
 /// Enumerates connected SteelSeries devices, opening a fresh [`HidApi`] and
 /// serializing bus access via [`HID_BUS_LOCK`]. Blocking — callers must run

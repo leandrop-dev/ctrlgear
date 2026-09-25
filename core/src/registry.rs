@@ -28,8 +28,10 @@ pub const PROFILES: &[DeviceProfile] = &[
     PRIME_MINI_PROFILE,
 ];
 
-/// Looks up the profile claiming `product_id`, if any.
-fn profile_for(product_id: u16) -> Option<&'static DeviceProfile> {
+/// Looks up the profile claiming `product_id`, if any. Pure/static — safe to
+/// call without an open HID handle (e.g. for input validation before opening
+/// a device).
+pub fn profile_for(product_id: u16) -> Option<&'static DeviceProfile> {
     PROFILES.iter().find(|p| p.product_ids.contains(&product_id))
 }
 
@@ -175,6 +177,21 @@ impl Device {
         } else {
             None
         }
+    }
+
+    /// Maximum number of DPI presets accepted, for devices with configurable DPI.
+    pub fn dpi_max_presets(&self) -> Option<u8> {
+        self.inner.profile().dpi.map(|dpi| dpi.max_presets)
+    }
+
+    /// Valid polling-rate choices in Hz, for devices with a configurable
+    /// polling rate; empty when unsupported.
+    pub fn polling_rate_choices(&self) -> Vec<u16> {
+        self.inner
+            .profile()
+            .polling_rate
+            .map(|p| p.choices.iter().map(|(hz, _)| *hz).collect())
+            .unwrap_or_default()
     }
 
     pub fn set_dpi(&self, values: &[u16]) -> Result<()> {
@@ -335,6 +352,10 @@ pub struct DeviceSummary {
     /// `supports_rgb` is `false`.
     pub rgb_default_lighting_choices: Vec<String>,
     pub dpi_range: Option<(u16, u16, u16)>,
+    /// Maximum number of DPI presets accepted; `None` when `supports_dpi` is `false`.
+    pub dpi_max_presets: Option<u8>,
+    /// Valid polling-rate choices in Hz; empty when `supports_polling_rate` is `false`.
+    pub polling_rate_choices: Vec<u16>,
     pub connection_type: ConnectionType,
     pub battery: Option<BatteryStatus>,
     pub chatmix: Option<ChatMixStatus>,
@@ -382,6 +403,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_rgb_rainbow: false,
                     rgb_default_lighting_choices: Vec::new(),
                     dpi_range: None,
+                    dpi_max_presets: None,
+                    polling_rate_choices: Vec::new(),
                     connection_type,
                     battery: None,
                     chatmix: None,
@@ -412,6 +435,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                         .map(|(name, _)| name.to_string())
                         .collect();
                     let dpi_range = device.dpi_range();
+                    let dpi_max_presets = device.dpi_max_presets();
+                    let polling_rate_choices = device.polling_rate_choices();
                     let supports_chatmix = device.supports_chatmix();
                     let chatmix_result = supports_chatmix.then(|| device.chatmix_status());
                     let chatmix = chatmix_result.as_ref().and_then(|r| r.as_ref().ok()).copied();
@@ -436,6 +461,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_rgb_rainbow,
                             rgb_default_lighting_choices,
                             dpi_range,
+                            dpi_max_presets,
+                            polling_rate_choices: polling_rate_choices.clone(),
                             connection_type,
                             battery: Some(status),
                             chatmix,
@@ -461,6 +488,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_rgb_rainbow,
                             rgb_default_lighting_choices,
                             dpi_range,
+                            dpi_max_presets,
+                            polling_rate_choices,
                             connection_type,
                             battery: None,
                             chatmix,
@@ -491,6 +520,8 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_rgb_rainbow: false,
                     rgb_default_lighting_choices: Vec::new(),
                     dpi_range: None,
+                    dpi_max_presets: None,
+                    polling_rate_choices: Vec::new(),
                     connection_type,
                     battery: None,
                     chatmix: None,
@@ -537,6 +568,16 @@ mod tests {
     #[test]
     fn connection_type_for_unknown_usb_product_id_is_unknown() {
         assert_eq!(connection_type_for(hidapi::BusType::Usb, 0xffff), ConnectionType::Unknown);
+    }
+
+    #[test]
+    fn profile_for_known_product_id_returns_its_profile() {
+        assert_eq!(profile_for(RIVAL3_WIRELESS_PRODUCT_ID).unwrap().name, RIVAL3_WIRELESS_PROFILE.name);
+    }
+
+    #[test]
+    fn profile_for_unknown_product_id_returns_none() {
+        assert!(profile_for(0xffff).is_none());
     }
 
     /// Guards against a silent product-ID collision across [`PROFILES`].
