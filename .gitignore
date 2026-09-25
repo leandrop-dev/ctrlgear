@@ -30,3 +30,6 @@ Thumbs.db
 
 # Claude Mallet project-local state
 /.mallet/
+
+# Local-only docs (ADRs) — kept out of the repo for now
+/docs/

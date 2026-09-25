@@ -1,14 +1,62 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+mod commands;
+mod events;
+
+use events::DeviceListUpdated;
+use tauri_specta::{collect_commands, collect_events, Event};
+
+/// Interval between automatic device-list refreshes; task 07 wires this to
+/// a user-configurable setting.
+const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+    let builder = tauri_specta::Builder::<tauri::Wry>::new()
+        .commands(collect_commands![commands::list_devices])
+        .events(collect_events![DeviceListUpdated]);
+
+    #[cfg(debug_assertions)]
+    builder
+        .export(specta_typescript::Typescript::default(), "../src/bindings.ts")
+        .expect("failed to export typescript bindings");
+
+    let app = tauri::Builder::default();
+
+    #[cfg(debug_assertions)]
+    let app = app.plugin(
+        tauri_plugin_mcp_bridge::Builder::new()
+            .bind_address("127.0.0.1")
+            .build(),
+    );
+
+    app.invoke_handler(builder.invoke_handler())
+        .setup(move |app| {
+            builder.mount_events(app);
+            spawn_poll_loop(app.handle().clone());
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Spawns the background loop that periodically refreshes the device list
+/// and pushes it to the frontend as a [`DeviceListUpdated`] event.
+fn spawn_poll_loop(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let mut interval = tokio::time::interval(POLL_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        interval.tick().await;
+        loop {
+            interval.tick().await;
+            let devices = match commands::discover_devices_async().await {
+                Ok(devices) => devices,
+                Err(e) => {
+                    eprintln!("Poll loop skipped a refresh: {e}");
+                    continue;
+                }
+            };
+            if let Err(e) = DeviceListUpdated(devices).emit(&app) {
+                eprintln!("Failed to emit device-list-updated: {e}");
+            }
+        }
+    });
 }

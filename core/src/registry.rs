@@ -247,7 +247,9 @@ impl Device {
 }
 
 /// How a device is physically reached.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub enum ConnectionType {
     UsbWired,
     Dongle24Ghz,
@@ -305,7 +307,9 @@ pub fn open(api: &HidApi, product_id: u16) -> Result<Device> {
 
 /// A connected SteelSeries device, with battery status already queried for
 /// devices that support it. Meant for populating a device list/grid UI.
-#[derive(Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct DeviceSummary {
     pub product_id: u16,
     pub name: String,
@@ -321,6 +325,8 @@ pub struct DeviceSummary {
     pub supports_volume_limiter: bool,
     pub supports_bluetooth_settings: bool,
     pub supports_rgb: bool,
+    /// Exported to TS as `number` (`u32`) — specta forbids exporting `usize` directly.
+    #[cfg_attr(feature = "specta", specta(type = u32))]
     pub rgb_zone_count: usize,
     pub supports_rgb_brightness: bool,
     pub supports_rgb_rainbow: bool,

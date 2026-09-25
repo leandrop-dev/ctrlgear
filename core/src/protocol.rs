@@ -129,7 +129,9 @@ impl PollingRate {
 }
 
 /// Battery status for wireless devices
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct BatteryStatus {
     /// Battery level (0-100)
     pub level: u8,
@@ -152,7 +154,9 @@ impl BatteryStatus {
 }
 
 /// ChatMix (game/chat volume balance) dial position for wireless headsets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct ChatMixStatus {
     /// Game volume (0-100)
     pub game_percent: u8,
