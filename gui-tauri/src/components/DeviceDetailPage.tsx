@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { commands, type ButtonActionChoice, type DeviceSummary } from "../bindings";
+import { commands, type ButtonActionChoice, type ChatMixStatus, type DeviceSummary } from "../bindings";
 import { batteryText, connectionLabel, displayName, dpiHelpText, productIdLabel } from "../lib/deviceLabels";
 import { parseDpiInput } from "../lib/dpiInput";
+import { parseSleepTimerMinutes } from "../lib/sleepTimerInput";
 import "../styles/DeviceDetailPage.css";
 
 type ApplyStatus = { ok: boolean; message: string } | null;
@@ -422,6 +423,431 @@ function RgbSection({ device }: { device: DeviceSummary }) {
   );
 }
 
+/** `gui/ui/main.slint`'s sidetone and mic-mute-LED `ComboBox` `model`s (identical 4-level scale). */
+const LEVEL_0_TO_3_CHOICES = ["Off", "Low", "Medium", "High"];
+/** `gui/ui/main.slint`'s mic-volume `ComboBox` `model` (0-7, off to max). */
+const MIC_VOLUME_CHOICES = ["0", "1", "2", "3", "4", "5", "6", "7"];
+/** `gui/ui/main.slint`'s equalizer preset buttons, in `EQ_PRESETS` index order. */
+const EQUALIZER_PRESETS = ["Flat", "Bass", "Focus", "Smiley"];
+/** `gui/ui/main.slint`'s Bluetooth call-volume `ComboBox` `model`. */
+const BLUETOOTH_CALL_VOLUME_CHOICES = ["Off", "Lower game volume", "Mute game during calls"];
+
+function SidetoneSection({ device }: { device: DeviceSummary }) {
+  const [level, setLevel] = useState(0);
+  const [applying, setApplying] = useState(false);
+  const [status, setStatus] = useState<ApplyStatus>(null);
+
+  useEffect(() => {
+    setLevel(0);
+    setStatus(null);
+  }, [device.productId]);
+
+  const handleApply = async () => {
+    setApplying(true);
+    try {
+      const result = await commands.setSidetone(device.productId, level);
+      if (result.status === "ok") {
+        setStatus({ ok: true, message: "Sidetone applied." });
+      } else {
+        setStatus({ ok: false, message: result.error });
+      }
+    } catch (e) {
+      setStatus({ ok: false, message: String(e) });
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <section className="device-detail-page__section">
+      <h2>Sidetone</h2>
+      <div className="device-detail-page__row">
+        <select aria-label="Sidetone" value={level} onChange={(e) => setLevel(Number(e.target.value))}>
+          {LEVEL_0_TO_3_CHOICES.map((label, i) => (
+            <option key={label} value={i}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <button onClick={handleApply} disabled={applying}>
+          {applying ? "Applying…" : "Apply"}
+        </button>
+      </div>
+      <StatusLine status={status} />
+    </section>
+  );
+}
+
+function MicMuteLedSection({ device }: { device: DeviceSummary }) {
+  const [level, setLevel] = useState(0);
+  const [applying, setApplying] = useState(false);
+  const [status, setStatus] = useState<ApplyStatus>(null);
+
+  useEffect(() => {
+    setLevel(0);
+    setStatus(null);
+  }, [device.productId]);
+
+  const handleApply = async () => {
+    setApplying(true);
+    try {
+      const result = await commands.setMicMuteLed(device.productId, level);
+      if (result.status === "ok") {
+        setStatus({ ok: true, message: "Mic mute LED brightness applied." });
+      } else {
+        setStatus({ ok: false, message: result.error });
+      }
+    } catch (e) {
+      setStatus({ ok: false, message: String(e) });
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <section className="device-detail-page__section">
+      <h2>Mic mute LED brightness</h2>
+      <div className="device-detail-page__row">
+        <select aria-label="Mic mute LED brightness" value={level} onChange={(e) => setLevel(Number(e.target.value))}>
+          {LEVEL_0_TO_3_CHOICES.map((label, i) => (
+            <option key={label} value={i}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <button onClick={handleApply} disabled={applying}>
+          {applying ? "Applying…" : "Apply"}
+        </button>
+      </div>
+      <StatusLine status={status} />
+    </section>
+  );
+}
+
+function MicVolumeSection({ device }: { device: DeviceSummary }) {
+  const [level, setLevel] = useState(0);
+  const [applying, setApplying] = useState(false);
+  const [status, setStatus] = useState<ApplyStatus>(null);
+
+  useEffect(() => {
+    setLevel(0);
+    setStatus(null);
+  }, [device.productId]);
+
+  const handleApply = async () => {
+    setApplying(true);
+    try {
+      const result = await commands.setMicVolume(device.productId, level);
+      if (result.status === "ok") {
+        setStatus({ ok: true, message: "Mic volume applied." });
+      } else {
+        setStatus({ ok: false, message: result.error });
+      }
+    } catch (e) {
+      setStatus({ ok: false, message: String(e) });
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <section className="device-detail-page__section">
+      <h2>Mic volume</h2>
+      <div className="device-detail-page__row">
+        <select aria-label="Mic volume" value={level} onChange={(e) => setLevel(Number(e.target.value))}>
+          {MIC_VOLUME_CHOICES.map((label, i) => (
+            <option key={label} value={i}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <button onClick={handleApply} disabled={applying}>
+          {applying ? "Applying…" : "Apply"}
+        </button>
+      </div>
+      <StatusLine status={status} />
+    </section>
+  );
+}
+
+function EqualizerSection({ device }: { device: DeviceSummary }) {
+  const [applyingPreset, setApplyingPreset] = useState<number | null>(null);
+  const [status, setStatus] = useState<ApplyStatus>(null);
+
+  useEffect(() => {
+    setStatus(null);
+  }, [device.productId]);
+
+  const handleApply = async (preset: number) => {
+    setApplyingPreset(preset);
+    try {
+      const result = await commands.setEqualizerPreset(device.productId, preset);
+      if (result.status === "ok") {
+        setStatus({ ok: true, message: "Equalizer preset applied." });
+      } else {
+        setStatus({ ok: false, message: result.error });
+      }
+    } catch (e) {
+      setStatus({ ok: false, message: String(e) });
+    } finally {
+      setApplyingPreset(null);
+    }
+  };
+
+  return (
+    <section className="device-detail-page__section">
+      <h2>Equalizer presets</h2>
+      <div className="device-detail-page__row">
+        {EQUALIZER_PRESETS.map((label, i) => (
+          <button key={label} onClick={() => handleApply(i)} disabled={applyingPreset !== null}>
+            {applyingPreset === i ? "Applying…" : label}
+          </button>
+        ))}
+      </div>
+      <p className="device-detail-page__help">
+        Applies on the headset itself, independent of any PipeWire-side equalizer (the two stack rather than
+        conflict).
+      </p>
+      <StatusLine status={status} />
+    </section>
+  );
+}
+
+function SleepTimerSection({ device }: { device: DeviceSummary }) {
+  const [minutesText, setMinutesText] = useState("0");
+  const [applying, setApplying] = useState(false);
+  const [status, setStatus] = useState<ApplyStatus>(null);
+
+  useEffect(() => {
+    setMinutesText("0");
+    setStatus(null);
+  }, [device.productId]);
+
+  const handleApply = async () => {
+    const minutes = parseSleepTimerMinutes(minutesText);
+    if (minutes === null) {
+      setStatus({ ok: false, message: "Enter a whole number of minutes from 0 to 255 (0 disables the timer)." });
+      return;
+    }
+    setApplying(true);
+    try {
+      const result = await commands.setSleepTimer(device.productId, minutes);
+      if (result.status === "ok") {
+        setStatus({ ok: true, message: "Sleep timer applied." });
+      } else {
+        setStatus({ ok: false, message: result.error });
+      }
+    } catch (e) {
+      setStatus({ ok: false, message: String(e) });
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <section className="device-detail-page__section">
+      <h2>Sleep timer</h2>
+      <p className="device-detail-page__help">Minutes of inactivity before the headset sleeps.</p>
+      <div className="device-detail-page__row">
+        <input
+          type="number"
+          aria-label="Sleep timer minutes"
+          min={0}
+          max={255}
+          step={1}
+          value={minutesText}
+          onChange={(e) => setMinutesText(e.target.value)}
+        />
+        <span>minutes</span>
+        <button onClick={handleApply} disabled={applying}>
+          {applying ? "Applying…" : "Apply"}
+        </button>
+      </div>
+      <StatusLine status={status} />
+    </section>
+  );
+}
+
+function VolumeLimiterSection({ device }: { device: DeviceSummary }) {
+  const [enabled, setEnabled] = useState(false);
+  const [status, setStatus] = useState<ApplyStatus>(null);
+
+  useEffect(() => {
+    setEnabled(false);
+    setStatus(null);
+  }, [device.productId]);
+
+  const handleToggle = async (checked: boolean) => {
+    setEnabled(checked);
+    try {
+      const result = await commands.setVolumeLimiter(device.productId, checked);
+      if (result.status === "ok") {
+        setStatus({ ok: true, message: "Volume limiter applied." });
+      } else {
+        setEnabled(!checked);
+        setStatus({ ok: false, message: result.error });
+      }
+    } catch (e) {
+      setEnabled(!checked);
+      setStatus({ ok: false, message: String(e) });
+    }
+  };
+
+  return (
+    <section className="device-detail-page__section">
+      <h2>Volume limiter</h2>
+      <div className="device-detail-page__row">
+        <label className="device-detail-page__row-label" htmlFor="volume-limiter">
+          Enabled
+        </label>
+        <input
+          id="volume-limiter"
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => void handleToggle(e.target.checked)}
+        />
+      </div>
+      <StatusLine status={status} />
+    </section>
+  );
+}
+
+function BluetoothSection({ device }: { device: DeviceSummary }) {
+  const [powerOnEnabled, setPowerOnEnabled] = useState(false);
+  const [callVolumeMode, setCallVolumeMode] = useState(0);
+  const [callVolumeApplying, setCallVolumeApplying] = useState(false);
+  const [status, setStatus] = useState<ApplyStatus>(null);
+
+  useEffect(() => {
+    setPowerOnEnabled(false);
+    setCallVolumeMode(0);
+    setStatus(null);
+  }, [device.productId]);
+
+  const handleTogglePowerOn = async (checked: boolean) => {
+    setPowerOnEnabled(checked);
+    try {
+      const result = await commands.setBluetoothPowerOn(device.productId, checked);
+      if (result.status === "ok") {
+        setStatus({ ok: true, message: "Bluetooth-when-powered-on applied." });
+      } else {
+        setPowerOnEnabled(!checked);
+        setStatus({ ok: false, message: result.error });
+      }
+    } catch (e) {
+      setPowerOnEnabled(!checked);
+      setStatus({ ok: false, message: String(e) });
+    }
+  };
+
+  const handleApplyCallVolume = async () => {
+    setCallVolumeApplying(true);
+    try {
+      const result = await commands.setBluetoothCallVolume(device.productId, callVolumeMode);
+      if (result.status === "ok") {
+        setStatus({ ok: true, message: "Bluetooth call volume applied." });
+      } else {
+        setStatus({ ok: false, message: result.error });
+      }
+    } catch (e) {
+      setStatus({ ok: false, message: String(e) });
+    } finally {
+      setCallVolumeApplying(false);
+    }
+  };
+
+  return (
+    <section className="device-detail-page__section">
+      <h2>Bluetooth</h2>
+      <div className="device-detail-page__row">
+        <label className="device-detail-page__row-label" htmlFor="bluetooth-power-on">
+          Turn on Bluetooth when the headset powers on
+        </label>
+        <input
+          id="bluetooth-power-on"
+          type="checkbox"
+          checked={powerOnEnabled}
+          onChange={(e) => void handleTogglePowerOn(e.target.checked)}
+        />
+      </div>
+      <h2>Call volume</h2>
+      <div className="device-detail-page__row">
+        <select
+          aria-label="Bluetooth call volume"
+          value={callVolumeMode}
+          onChange={(e) => setCallVolumeMode(Number(e.target.value))}
+        >
+          {BLUETOOTH_CALL_VOLUME_CHOICES.map((label, i) => (
+            <option key={label} value={i}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <button onClick={handleApplyCallVolume} disabled={callVolumeApplying}>
+          {callVolumeApplying ? "Applying…" : "Apply"}
+        </button>
+      </div>
+      <StatusLine status={status} />
+    </section>
+  );
+}
+
+function ChatMixSection({ chatmix }: { chatmix: ChatMixStatus }) {
+  return (
+    <section className="device-detail-page__section">
+      <h2>ChatMix</h2>
+      <p className="device-detail-page__help">
+        Game {chatmix.gamePercent}%  ·  Chat {chatmix.chatPercent}%
+      </p>
+    </section>
+  );
+}
+
+function FirmwareVersionSection({ device }: { device: DeviceSummary }) {
+  const [version, setVersion] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setVersion(null);
+    setError(null);
+
+    commands
+      .getFirmwareVersion(device.productId)
+      .then((result) => {
+        if (cancelled) return;
+        if (result.status === "ok") {
+          setVersion(result.data);
+        } else {
+          setError(result.error);
+        }
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(String(e));
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [device.productId]);
+
+  return (
+    <section className="device-detail-page__section">
+      <h2>Firmware version</h2>
+      {loading && <p className="device-detail-page__help">Reading…</p>}
+      {!loading && version !== null && <p className="device-detail-page__help">{version}</p>}
+      {!loading && error !== null && (
+        <p className="device-detail-page__status device-detail-page__status--error">{error}</p>
+      )}
+    </section>
+  );
+}
+
 export function DeviceDetailPage({
   device,
   devicesLoaded,
@@ -463,6 +889,13 @@ export function DeviceDetailPage({
     !device.supportsDpi &&
     !device.supportsPollingRate &&
     !device.supportsButtonMapping &&
+    !device.supportsSidetone &&
+    !device.supportsMicMuteLed &&
+    !device.supportsMicVolume &&
+    !device.supportsEqualizer &&
+    !device.supportsSleepTimer &&
+    !device.supportsVolumeLimiter &&
+    !device.supportsBluetoothSettings &&
     !device.supportsRgb;
 
   return (
@@ -497,8 +930,17 @@ export function DeviceDetailPage({
         <p className="device-detail-page__status device-detail-page__status--error">{device.note}</p>
       )}
 
+      {device.supported && device.supportsFirmware && <FirmwareVersionSection device={device} />}
+      {device.supported && device.chatmix !== null && <ChatMixSection chatmix={device.chatmix} />}
       {device.supported && device.supportsDpi && <DpiSection device={device} />}
       {device.supported && device.supportsPollingRate && <PollingRateSection device={device} />}
+      {device.supported && device.supportsSidetone && <SidetoneSection device={device} />}
+      {device.supported && device.supportsMicMuteLed && <MicMuteLedSection device={device} />}
+      {device.supported && device.supportsMicVolume && <MicVolumeSection device={device} />}
+      {device.supported && device.supportsEqualizer && <EqualizerSection device={device} />}
+      {device.supported && device.supportsSleepTimer && <SleepTimerSection device={device} />}
+      {device.supported && device.supportsVolumeLimiter && <VolumeLimiterSection device={device} />}
+      {device.supported && device.supportsBluetoothSettings && <BluetoothSection device={device} />}
       {device.supported && device.supportsButtonMapping && <ButtonMappingSection device={device} />}
       {device.supported && device.supportsRgb && <RgbSection device={device} />}
 

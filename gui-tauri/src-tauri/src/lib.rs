@@ -23,6 +23,15 @@ pub fn run() {
             device_commands::set_rgb_brightness,
             device_commands::set_rgb_rainbow,
             device_commands::set_rgb_default_lighting,
+            device_commands::set_sidetone,
+            device_commands::set_mic_mute_led,
+            device_commands::set_mic_volume,
+            device_commands::set_equalizer_preset,
+            device_commands::set_sleep_timer,
+            device_commands::set_volume_limiter,
+            device_commands::set_bluetooth_power_on,
+            device_commands::set_bluetooth_call_volume,
+            device_commands::get_firmware_version,
         ])
         .events(collect_events![DeviceListUpdated]);
 

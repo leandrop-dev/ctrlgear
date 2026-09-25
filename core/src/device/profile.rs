@@ -412,7 +412,9 @@ impl ConfigurablePollingRate for ProfiledDevice {
 }
 
 /// Validates a sidetone level is in the 0-3 (Off/Low/Medium/High) range.
-fn validate_sidetone_level(level: u8) -> Result<()> {
+/// `pub` so callers with a device's product ID but no open HID handle yet
+/// (e.g. the Tauri IPC layer) can validate before opening the device.
+pub fn validate_sidetone_level(level: u8) -> Result<()> {
     if level > 3 {
         return Err(Error::InvalidParameter(
             "Sidetone level must be 0-3".to_string(),
@@ -432,8 +434,8 @@ impl ConfigurableSidetone for ProfiledDevice {
 }
 
 /// Validates a mic mute LED brightness level is in the 0-3 (off to max)
-/// range.
-fn validate_mic_mute_led_level(level: u8) -> Result<()> {
+/// range. `pub` — see [`validate_sidetone_level`].
+pub fn validate_mic_mute_led_level(level: u8) -> Result<()> {
     if level > 3 {
         return Err(Error::InvalidParameter(
             "Mic mute LED brightness must be 0-3".to_string(),
@@ -452,8 +454,9 @@ impl ConfigurableMicMuteLed for ProfiledDevice {
     }
 }
 
-/// Validates a mic volume level is in the 0-7 (off to max) range.
-fn validate_mic_volume_level(level: u8) -> Result<()> {
+/// Validates a mic volume level is in the 0-7 (off to max) range. `pub` —
+/// see [`validate_sidetone_level`].
+pub fn validate_mic_volume_level(level: u8) -> Result<()> {
     if level > 7 {
         return Err(Error::InvalidParameter(
             "Mic volume must be 0-7".to_string(),
@@ -498,6 +501,21 @@ fn encode_equalizer_band(gain: f32) -> u8 {
     (0x14_i16 + (gain * 2.0).round() as i16).clamp(0, 255) as u8
 }
 
+/// Validates an equalizer preset index is within `equalizer.presets`. `pub`
+/// so callers with a device's product ID but no open HID handle yet (e.g.
+/// the Tauri IPC layer) can validate before opening the device.
+pub fn validate_equalizer_preset(equalizer: &EqualizerProfile, preset: u8) -> Result<()> {
+    if (preset as usize) < equalizer.presets.len() {
+        Ok(())
+    } else {
+        Err(Error::InvalidParameter(format!(
+            "Invalid equalizer preset: {}. Must be 0-{}",
+            preset,
+            equalizer.presets.len().saturating_sub(1)
+        )))
+    }
+}
+
 impl ConfigurableEqualizer for ProfiledDevice {
     fn equalizer_bands(&self) -> usize {
         self.profile.equalizer.map(|e| e.bands).unwrap_or(0)
@@ -517,15 +535,8 @@ impl ConfigurableEqualizer for ProfiledDevice {
 
     fn set_equalizer_preset(&self, preset: u8) -> Result<()> {
         let equalizer = require_capability!(self, equalizer, "configurable equalizer");
-        let bands = equalizer
-            .presets
-            .get(preset as usize)
-            .ok_or_else(|| Error::InvalidParameter(format!(
-                "Invalid equalizer preset: {}. Must be 0-{}",
-                preset,
-                equalizer.presets.len().saturating_sub(1)
-            )))?;
-        self.set_equalizer(bands)
+        validate_equalizer_preset(equalizer, preset)?;
+        self.set_equalizer(equalizer.presets[preset as usize])
     }
 }
 
@@ -546,8 +557,9 @@ impl ConfigurableVolumeLimiter for ProfiledDevice {
     }
 }
 
-/// Validates a Bluetooth call-volume mode is in the 0-2 range.
-fn validate_bluetooth_call_volume_mode(mode: u8) -> Result<()> {
+/// Validates a Bluetooth call-volume mode is in the 0-2 range. `pub` — see
+/// [`validate_sidetone_level`].
+pub fn validate_bluetooth_call_volume_mode(mode: u8) -> Result<()> {
     if mode > 2 {
         return Err(Error::InvalidParameter(
             "Bluetooth call volume mode must be 0-2".to_string(),
@@ -1026,6 +1038,23 @@ mod tests {
     #[test]
     fn encode_equalizer_band_zero_gain_is_baseline() {
         assert_eq!(encode_equalizer_band(0.0), 0x14);
+    }
+
+    #[test]
+    fn validate_equalizer_preset_accepts_every_index_in_range() {
+        use crate::device::arctis_nova_7::ARCTIS_NOVA_7_PROFILE;
+        let equalizer = ARCTIS_NOVA_7_PROFILE.equalizer.unwrap();
+        for preset in 0..equalizer.presets.len() as u8 {
+            assert!(validate_equalizer_preset(&equalizer, preset).is_ok());
+        }
+    }
+
+    #[test]
+    fn validate_equalizer_preset_rejects_index_past_last_preset() {
+        use crate::device::arctis_nova_7::ARCTIS_NOVA_7_PROFILE;
+        let equalizer = ARCTIS_NOVA_7_PROFILE.equalizer.unwrap();
+        let err = validate_equalizer_preset(&equalizer, equalizer.presets.len() as u8).unwrap_err();
+        assert!(matches!(err, Error::InvalidParameter(_)));
     }
 
     #[test]

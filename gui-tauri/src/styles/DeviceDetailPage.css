@@ -41,7 +41,8 @@
 }
 
 .device-detail-page__row select,
-.device-detail-page__row input[type="text"] {
+.device-detail-page__row input[type="text"],
+.device-detail-page__row input[type="number"] {
   flex: 1;
   padding: 0.5em 0.7em;
   border-radius: 8px;
@@ -140,7 +141,8 @@
 
 @media (prefers-color-scheme: dark) {
   .device-detail-page__row select,
-  .device-detail-page__row input[type="text"] {
+  .device-detail-page__row input[type="text"],
+  .device-detail-page__row input[type="number"] {
     border-color: rgba(246, 246, 246, 0.2);
     background-color: #1f1f1f98;
     color: #f6f6f6;

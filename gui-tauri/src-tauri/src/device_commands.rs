@@ -5,7 +5,11 @@
 
 use crate::commands::HID_BUS_LOCK;
 use ctrlgear_core::buttons::{Button, ButtonAction, ButtonMapping};
-use ctrlgear_core::device::profile::{DeviceProfile, DpiProfile, PollingRateProfile, RgbProfile};
+use ctrlgear_core::device::profile::{
+    validate_bluetooth_call_volume_mode, validate_equalizer_preset, validate_mic_mute_led_level,
+    validate_mic_volume_level, validate_sidetone_level, DeviceProfile, DpiProfile,
+    PollingRateProfile, RgbProfile,
+};
 use ctrlgear_core::registry::{self, Device};
 use hidapi::HidApi;
 use std::str::FromStr;
@@ -274,6 +278,113 @@ pub async fn set_rgb_default_lighting(product_id: u16, choice: String) -> Result
     validate_default_lighting_choice(&rgb, &choice)?;
 
     with_device(product_id, move |device| device.set_rgb_default_lighting(&choice).map_err(|e| e.to_string())).await
+}
+
+/// Sets a headset's sidetone (mic monitoring) level (0-3, Off/Low/Medium/High).
+/// Mirrors `gui/src/main.rs`'s `apply_sidetone`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_sidetone(product_id: u16, level: u8) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    profile.sidetone.ok_or_else(|| format!("{} has no configurable sidetone", profile.name))?;
+    validate_sidetone_level(level).map_err(|e| e.to_string())?;
+
+    with_device(product_id, move |device| device.set_sidetone(level).map_err(|e| e.to_string())).await
+}
+
+/// Sets a headset's mic-mute LED brightness (0-3, off to max). Mirrors
+/// `gui/src/main.rs`'s `apply_mic_mute_led_brightness`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_mic_mute_led(product_id: u16, level: u8) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    profile.mic_mute_led.ok_or_else(|| format!("{} has no configurable mic mute LED", profile.name))?;
+    validate_mic_mute_led_level(level).map_err(|e| e.to_string())?;
+
+    with_device(product_id, move |device| device.set_mic_mute_led_brightness(level).map_err(|e| e.to_string())).await
+}
+
+/// Sets a headset's microphone input volume (0-7, off to max). Mirrors
+/// `gui/src/main.rs`'s `apply_mic_volume`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_mic_volume(product_id: u16, level: u8) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    profile.mic_volume.ok_or_else(|| format!("{} has no configurable mic volume", profile.name))?;
+    validate_mic_volume_level(level).map_err(|e| e.to_string())?;
+
+    with_device(product_id, move |device| device.set_mic_volume(level).map_err(|e| e.to_string())).await
+}
+
+/// Applies one of a headset's 4 built-in equalizer presets (Flat/Bass/Focus/
+/// Smiley, in that index order) — no manual per-band sliders, matching the
+/// Slint app's shipped scope. Mirrors `gui/src/main.rs`'s `apply_equalizer_preset`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_equalizer_preset(product_id: u16, preset: u8) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    let equalizer = profile.equalizer.ok_or_else(|| format!("{} has no configurable equalizer", profile.name))?;
+    validate_equalizer_preset(&equalizer, preset).map_err(|e| e.to_string())?;
+
+    with_device(product_id, move |device| device.set_equalizer_preset(preset).map_err(|e| e.to_string())).await
+}
+
+/// Sets a headset's auto-sleep timer (minutes of inactivity, 0-255; `0`
+/// disables it). Mirrors `gui/src/main.rs`'s `apply_sleep_timer`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_sleep_timer(product_id: u16, minutes: u8) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    profile.sleep_timer.ok_or_else(|| format!("{} has no configurable sleep timer", profile.name))?;
+
+    with_device(product_id, move |device| device.set_sleep_timer(minutes).map_err(|e| e.to_string())).await
+}
+
+/// Toggles a headset's output volume limiter. Mirrors `gui/src/main.rs`'s
+/// `apply_volume_limiter`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_volume_limiter(product_id: u16, enabled: bool) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    profile.volume_limiter.ok_or_else(|| format!("{} has no configurable volume limiter", profile.name))?;
+
+    with_device(product_id, move |device| device.set_volume_limiter(enabled).map_err(|e| e.to_string())).await
+}
+
+/// Toggles whether a headset turns Bluetooth on when it powers on. Mirrors
+/// `gui/src/main.rs`'s `apply_bluetooth_power_on`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_bluetooth_power_on(product_id: u16, enabled: bool) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    profile.bluetooth.ok_or_else(|| format!("{} has no configurable bluetooth settings", profile.name))?;
+
+    with_device(product_id, move |device| device.set_bluetooth_when_powered_on(enabled).map_err(|e| e.to_string())).await
+}
+
+/// Sets a headset's Bluetooth call-volume mode (`0` off, `1` lower game
+/// volume, `2` mute game during calls). Mirrors `gui/src/main.rs`'s
+/// `apply_bluetooth_call_volume`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_bluetooth_call_volume(product_id: u16, mode: u8) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    profile.bluetooth.ok_or_else(|| format!("{} has no configurable bluetooth settings", profile.name))?;
+    validate_bluetooth_call_volume_mode(mode).map_err(|e| e.to_string())?;
+
+    with_device(product_id, move |device| device.set_bluetooth_call_volume(mode).map_err(|e| e.to_string())).await
+}
+
+/// Reads a device's firmware version. Read-only — mirrors the CLI's
+/// `Commands::Info` firmware-version read (`cli/src/main.rs`); the Slint app
+/// never displayed this itself.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_firmware_version(product_id: u16) -> Result<String, String> {
+    let profile = profile_for(product_id)?;
+    profile.firmware_version.ok_or_else(|| format!("{} has no firmware version", profile.name))?;
+
+    with_device(product_id, |device| device.firmware_version().map_err(|e| e.to_string())).await
 }
 
 #[cfg(test)]

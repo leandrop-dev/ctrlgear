@@ -49,6 +49,54 @@ export const commands = {
 	 *  `apply_rgb_default_lighting`.
 	 */
 	setRgbDefaultLighting: (productId: number, choice: string) => typedError<null, string>(__TAURI_INVOKE("set_rgb_default_lighting", { productId, choice })),
+	/**
+	 *  Sets a headset's sidetone (mic monitoring) level (0-3, Off/Low/Medium/High).
+	 *  Mirrors `gui/src/main.rs`'s `apply_sidetone`.
+	 */
+	setSidetone: (productId: number, level: number) => typedError<null, string>(__TAURI_INVOKE("set_sidetone", { productId, level })),
+	/**
+	 *  Sets a headset's mic-mute LED brightness (0-3, off to max). Mirrors
+	 *  `gui/src/main.rs`'s `apply_mic_mute_led_brightness`.
+	 */
+	setMicMuteLed: (productId: number, level: number) => typedError<null, string>(__TAURI_INVOKE("set_mic_mute_led", { productId, level })),
+	/**
+	 *  Sets a headset's microphone input volume (0-7, off to max). Mirrors
+	 *  `gui/src/main.rs`'s `apply_mic_volume`.
+	 */
+	setMicVolume: (productId: number, level: number) => typedError<null, string>(__TAURI_INVOKE("set_mic_volume", { productId, level })),
+	/**
+	 *  Applies one of a headset's 4 built-in equalizer presets (Flat/Bass/Focus/
+	 *  Smiley, in that index order) — no manual per-band sliders, matching the
+	 *  Slint app's shipped scope. Mirrors `gui/src/main.rs`'s `apply_equalizer_preset`.
+	 */
+	setEqualizerPreset: (productId: number, preset: number) => typedError<null, string>(__TAURI_INVOKE("set_equalizer_preset", { productId, preset })),
+	/**
+	 *  Sets a headset's auto-sleep timer (minutes of inactivity, 0-255; `0`
+	 *  disables it). Mirrors `gui/src/main.rs`'s `apply_sleep_timer`.
+	 */
+	setSleepTimer: (productId: number, minutes: number) => typedError<null, string>(__TAURI_INVOKE("set_sleep_timer", { productId, minutes })),
+	/**
+	 *  Toggles a headset's output volume limiter. Mirrors `gui/src/main.rs`'s
+	 *  `apply_volume_limiter`.
+	 */
+	setVolumeLimiter: (productId: number, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_volume_limiter", { productId, enabled })),
+	/**
+	 *  Toggles whether a headset turns Bluetooth on when it powers on. Mirrors
+	 *  `gui/src/main.rs`'s `apply_bluetooth_power_on`.
+	 */
+	setBluetoothPowerOn: (productId: number, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_bluetooth_power_on", { productId, enabled })),
+	/**
+	 *  Sets a headset's Bluetooth call-volume mode (`0` off, `1` lower game
+	 *  volume, `2` mute game during calls). Mirrors `gui/src/main.rs`'s
+	 *  `apply_bluetooth_call_volume`.
+	 */
+	setBluetoothCallVolume: (productId: number, mode: number) => typedError<null, string>(__TAURI_INVOKE("set_bluetooth_call_volume", { productId, mode })),
+	/**
+	 *  Reads a device's firmware version. Read-only — mirrors the CLI's
+	 *  `Commands::Info` firmware-version read (`cli/src/main.rs`); the Slint app
+	 *  never displayed this itself.
+	 */
+	getFirmwareVersion: (productId: number) => typedError<string, string>(__TAURI_INVOKE("get_firmware_version", { productId })),
 };
 
 /** Events */
@@ -102,6 +150,7 @@ export type DeviceSummary = {
 	supportsSleepTimer: boolean,
 	supportsVolumeLimiter: boolean,
 	supportsBluetoothSettings: boolean,
+	supportsFirmware: boolean,
 	supportsRgb: boolean,
 	/**  Exported to TS as `number` (`u32`) — specta forbids exporting `usize` directly. */
 	rgbZoneCount: number,

@@ -130,6 +130,11 @@ impl Device {
         self.inner.profile().bluetooth.is_some()
     }
 
+    /// Whether this device has a readable firmware version.
+    pub fn supports_firmware_version(&self) -> bool {
+        self.inner.profile().firmware_version.is_some()
+    }
+
     /// Whether this device has configurable per-zone RGB lighting (mice only).
     pub fn supports_rgb(&self) -> bool {
         self.inner.profile().rgb.is_some()
@@ -341,6 +346,7 @@ pub struct DeviceSummary {
     pub supports_sleep_timer: bool,
     pub supports_volume_limiter: bool,
     pub supports_bluetooth_settings: bool,
+    pub supports_firmware: bool,
     pub supports_rgb: bool,
     /// Exported to TS as `number` (`u32`) — specta forbids exporting `usize` directly.
     #[cfg_attr(feature = "specta", specta(type = u32))]
@@ -397,6 +403,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_sleep_timer: false,
                     supports_volume_limiter: false,
                     supports_bluetooth_settings: false,
+                    supports_firmware: false,
                     supports_rgb: false,
                     rgb_zone_count: 0,
                     supports_rgb_brightness: false,
@@ -425,6 +432,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     let supports_sleep_timer = device.supports_sleep_timer();
                     let supports_volume_limiter = device.supports_volume_limiter();
                     let supports_bluetooth_settings = device.supports_bluetooth_settings();
+                    let supports_firmware = device.supports_firmware_version();
                     let supports_rgb = device.supports_rgb();
                     let rgb_zone_count = device.rgb_zone_count();
                     let supports_rgb_brightness = device.supports_rgb_brightness();
@@ -455,6 +463,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_sleep_timer,
                             supports_volume_limiter,
                             supports_bluetooth_settings,
+                            supports_firmware,
                             supports_rgb,
                             rgb_zone_count,
                             supports_rgb_brightness,
@@ -482,6 +491,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                             supports_sleep_timer,
                             supports_volume_limiter,
                             supports_bluetooth_settings,
+                            supports_firmware,
                             supports_rgb,
                             rgb_zone_count,
                             supports_rgb_brightness,
@@ -514,6 +524,7 @@ pub fn discover(api: &HidApi) -> Vec<DeviceSummary> {
                     supports_sleep_timer: false,
                     supports_volume_limiter: false,
                     supports_bluetooth_settings: false,
+                    supports_firmware: false,
                     supports_rgb: false,
                     rgb_zone_count: 0,
                     supports_rgb_brightness: false,
@@ -642,5 +653,13 @@ mod tests {
         assert!(RIVAL3_WIRELESS_PROFILE.sleep_timer.is_none());
         assert!(RIVAL3_WIRELESS_PROFILE.volume_limiter.is_none());
         assert!(RIVAL3_WIRELESS_PROFILE.bluetooth.is_none());
+    }
+
+    /// Firmware version is a Rival 3 Wireless capability only — the Arctis
+    /// Nova 7 profile has no `firmware_version` field set.
+    #[test]
+    fn rival3_wireless_profile_declares_firmware_version_but_arctis_nova_7_does_not() {
+        assert!(RIVAL3_WIRELESS_PROFILE.firmware_version.is_some());
+        assert!(ARCTIS_NOVA_7_PROFILE.firmware_version.is_none());
     }
 }
