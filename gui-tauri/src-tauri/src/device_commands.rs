@@ -224,6 +224,58 @@ pub async fn set_button_mapping(product_id: u16, actions: Vec<String>) -> Result
     with_device(product_id, move |device| device.set_button_mapping(&mapping).map_err(|e| e.to_string())).await
 }
 
+/// Sets one RGB zone's color. Mirrors `gui/src/main.rs`'s `apply_rgb_zone_color`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_rgb_zone(product_id: u16, zone: u8, hex_color: String) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    let rgb = profile.rgb.ok_or_else(|| format!("{} has no configurable RGB lighting", profile.name))?;
+    validate_rgb_zone(&rgb, zone)?;
+    let (r, g, b) = parse_hex_color(&hex_color)?;
+
+    with_device(product_id, move |device| device.set_rgb_zone_color(zone, r, g, b).map_err(|e| e.to_string())).await
+}
+
+/// Sets a device's RGB LED brightness (0-100). Mirrors `gui/src/main.rs`'s
+/// `apply_rgb_brightness`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_rgb_brightness(product_id: u16, level: u8) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    let rgb = profile.rgb.ok_or_else(|| format!("{} has no configurable RGB lighting", profile.name))?;
+    rgb.brightness_command
+        .ok_or_else(|| format!("{} has no configurable LED brightness", profile.name))?;
+
+    with_device(product_id, move |device| device.set_rgb_brightness(level).map_err(|e| e.to_string())).await
+}
+
+/// Enables the RGB rainbow effect across every zone. Mirrors
+/// `gui/src/main.rs`'s `apply_rgb_rainbow(product_id, "all")` — there's no
+/// direct "off" command, so the frontend shows an explanatory message
+/// instead of calling this when the rainbow checkbox is unchecked.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_rgb_rainbow(product_id: u16) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    let rgb = profile.rgb.ok_or_else(|| format!("{} has no configurable RGB lighting", profile.name))?;
+    rgb.rainbow_command
+        .ok_or_else(|| format!("{} has no rainbow effect", profile.name))?;
+
+    with_device(product_id, move |device| device.set_rgb_rainbow_effect("all").map_err(|e| e.to_string())).await
+}
+
+/// Sets a device's default (startup) lighting. Mirrors `gui/src/main.rs`'s
+/// `apply_rgb_default_lighting`.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_rgb_default_lighting(product_id: u16, choice: String) -> Result<(), String> {
+    let profile = profile_for(product_id)?;
+    let rgb = profile.rgb.ok_or_else(|| format!("{} has no configurable RGB lighting", profile.name))?;
+    validate_default_lighting_choice(&rgb, &choice)?;
+
+    with_device(product_id, move |device| device.set_rgb_default_lighting(&choice).map_err(|e| e.to_string())).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

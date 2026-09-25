@@ -30,6 +30,25 @@ export const commands = {
 	 *  rows. Pure/static — no HID access.
 	 */
 	buttonSlotLabels: () => __TAURI_INVOKE<string[]>("button_slot_labels"),
+	/**  Sets one RGB zone's color. Mirrors `gui/src/main.rs`'s `apply_rgb_zone_color`. */
+	setRgbZone: (productId: number, zone: number, hexColor: string) => typedError<null, string>(__TAURI_INVOKE("set_rgb_zone", { productId, zone, hexColor })),
+	/**
+	 *  Sets a device's RGB LED brightness (0-100). Mirrors `gui/src/main.rs`'s
+	 *  `apply_rgb_brightness`.
+	 */
+	setRgbBrightness: (productId: number, level: number) => typedError<null, string>(__TAURI_INVOKE("set_rgb_brightness", { productId, level })),
+	/**
+	 *  Enables the RGB rainbow effect across every zone. Mirrors
+	 *  `gui/src/main.rs`'s `apply_rgb_rainbow(product_id, "all")` — there's no
+	 *  direct "off" command, so the frontend shows an explanatory message
+	 *  instead of calling this when the rainbow checkbox is unchecked.
+	 */
+	setRgbRainbow: (productId: number) => typedError<null, string>(__TAURI_INVOKE("set_rgb_rainbow", { productId })),
+	/**
+	 *  Sets a device's default (startup) lighting. Mirrors `gui/src/main.rs`'s
+	 *  `apply_rgb_default_lighting`.
+	 */
+	setRgbDefaultLighting: (productId: number, choice: string) => typedError<null, string>(__TAURI_INVOKE("set_rgb_default_lighting", { productId, choice })),
 };
 
 /** Events */

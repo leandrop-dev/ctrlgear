@@ -65,6 +65,24 @@
   background-repeat: no-repeat;
 }
 
+.device-detail-page__row input[type="color"] {
+  width: 2.4em;
+  height: 2.4em;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 15, 15, 0.15);
+  background: none;
+}
+
+.device-detail-page__row input[type="range"] {
+  flex: 1;
+}
+
+.device-detail-page__row input[type="checkbox"] {
+  width: 1.1em;
+  height: 1.1em;
+}
+
 .device-detail-page__section {
   border-radius: 10px;
   background: rgba(15, 15, 15, 0.04);
@@ -126,6 +144,10 @@
     border-color: rgba(246, 246, 246, 0.2);
     background-color: #1f1f1f98;
     color: #f6f6f6;
+  }
+
+  .device-detail-page__row input[type="color"] {
+    border-color: rgba(246, 246, 246, 0.2);
   }
 
   .device-detail-page__section {

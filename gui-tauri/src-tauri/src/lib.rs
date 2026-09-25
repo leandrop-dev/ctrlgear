@@ -19,6 +19,10 @@ pub fn run() {
             device_commands::set_button_mapping,
             device_commands::button_action_choices,
             device_commands::button_slot_labels,
+            device_commands::set_rgb_zone,
+            device_commands::set_rgb_brightness,
+            device_commands::set_rgb_rainbow,
+            device_commands::set_rgb_default_lighting,
         ])
         .events(collect_events![DeviceListUpdated]);
 
