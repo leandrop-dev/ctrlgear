@@ -97,6 +97,38 @@ export const commands = {
 	 *  never displayed this itself.
 	 */
 	getFirmwareVersion: (productId: number) => typedError<string, string>(__TAURI_INVOKE("get_firmware_version", { productId })),
+	/**
+	 *  Returns the current in-memory settings, loaded once at startup and kept in
+	 *  sync by every `save_*` command below.
+	 */
+	getSettings: () => __TAURI_INVOKE<Settings>("get_settings"),
+	/**
+	 *  Sets the battery-poll interval (clamped to 1-120 minutes, matching the
+	 *  frontend's own bounds) and reconfigures the running poll loop. Mirrors
+	 *  `gui/src/main.rs`'s `on_save_poll_interval`.
+	 */
+	savePollInterval: (minutes: number) => typedError<Settings, string>(__TAURI_INVOKE("save_poll_interval", { minutes })),
+	/**
+	 *  Sets the tray icon's colored/monochrome style. Mirrors `gui/src/main.rs`'s
+	 *  `on_save_tray_icon_style`.
+	 */
+	saveTrayIconStyle: (monochrome: boolean) => typedError<Settings, string>(__TAURI_INVOKE("save_tray_icon_style", { monochrome })),
+	/**
+	 *  Sets whether a low-battery notification stays until manually dismissed.
+	 *  Mirrors `gui/src/main.rs`'s `on_save_notification_persistent`.
+	 */
+	saveNotificationPersistent: (persistent: boolean) => typedError<Settings, string>(__TAURI_INVOKE("save_notification_persistent", { persistent })),
+	/**
+	 *  Sets the sound played by a low-battery notification. Mirrors
+	 *  `gui/src/main.rs`'s `on_save_notification_sound`.
+	 */
+	saveNotificationSound: (sound: SoundChoice) => typedError<Settings, string>(__TAURI_INVOKE("save_notification_sound", { sound })),
+	/**
+	 *  Fires a short-lived preview notification for `sound`, off the main thread
+	 *  since `notify-rust`'s `show()` blocks on D-Bus. Mirrors `gui/src/main.rs`'s
+	 *  `preview_notification_sound`.
+	 */
+	previewNotificationSound: (sound: SoundChoice) => typedError<null, string>(__TAURI_INVOKE("preview_notification_sound", { sound })),
 };
 
 /** Events */
@@ -176,6 +208,18 @@ export type DeviceSummary = {
 	 */
 	note: string | null,
 };
+
+export type Settings = {
+	poll_interval_minutes: number,
+	tray_icon_style?: TrayIconStyle,
+	notification_persistent?: boolean,
+	notification_sound?: SoundChoice,
+	chatmix_sinks_enabled?: boolean,
+};
+
+export type SoundChoice = "Silent" | "Default" | "DialogWarning" | "MessageNewInstant";
+
+export type TrayIconStyle = "Colored" | "Monochrome";
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; data: T } | { status: "error"; error: E }> {

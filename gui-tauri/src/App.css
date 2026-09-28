@@ -47,6 +47,21 @@ button:disabled {
   opacity: 0.6;
 }
 
+.app-nav {
+  display: flex;
+  gap: 8px;
+  padding: 12px 24px 0;
+}
+
+.app-nav__item {
+  background: transparent;
+  box-shadow: none;
+}
+
+.app-nav__item--active {
+  border-color: #396cd8;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;

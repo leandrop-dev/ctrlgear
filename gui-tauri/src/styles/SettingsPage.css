@@ -1,0 +1,140 @@
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  text-align: left;
+}
+
+.settings-page h1 {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0;
+}
+
+.settings-page__section {
+  border-radius: 10px;
+  background: rgba(15, 15, 15, 0.04);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-page__section h2 {
+  font-size: 13px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.settings-page__help {
+  font-size: 11px;
+  color: rgba(15, 15, 15, 0.55);
+  margin: 0;
+}
+
+.settings-page__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-page__row input[type="text"] {
+  flex: 1;
+  padding: 0.5em 0.7em;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 15, 15, 0.15);
+  font-size: 1em;
+  font-family: inherit;
+}
+
+/* WebKitGTK paints native selects with the GTK theme, ignoring background;
+   draw the box and caret ourselves so it follows the page colors (see
+   ../styles/DeviceDetailPage.css for the same fix on the detail page). */
+.settings-page__row select {
+  flex: 1;
+  padding: 0.5em 0.7em;
+  border-radius: 8px;
+  border: 1px solid rgba(15, 15, 15, 0.15);
+  font-size: 1em;
+  font-family: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #ffffff;
+  color: #0f0f0f;
+  padding-right: 2.2em;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 1.1em) 50%, calc(100% - 0.8em) 50%;
+  background-size: 0.3em 0.3em;
+  background-repeat: no-repeat;
+}
+
+.settings-page__row input[type="checkbox"] {
+  width: 1.1em;
+  height: 1.1em;
+}
+
+.settings-page__choice--active {
+  border-color: #396cd8;
+}
+
+.settings-page__status {
+  font-size: 11px;
+  color: #4caf50;
+  margin: 0;
+}
+
+.settings-page__status--error {
+  color: #e05050;
+}
+
+.settings-page__toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: rgba(76, 175, 80, 0.15);
+  border: 1px solid rgba(76, 175, 80, 0.4);
+  color: #2f6b32;
+}
+
+.settings-page__toast--error {
+  background: rgba(224, 80, 80, 0.15);
+  border-color: rgba(224, 80, 80, 0.4);
+  color: #a23a3a;
+}
+
+@media (prefers-color-scheme: dark) {
+  .settings-page__section {
+    background: rgba(246, 246, 246, 0.06);
+  }
+
+  .settings-page__help {
+    color: rgba(246, 246, 246, 0.55);
+  }
+
+  .settings-page__row input[type="text"] {
+    border-color: rgba(246, 246, 246, 0.2);
+    background-color: #1f1f1f98;
+    color: #f6f6f6;
+  }
+
+  .settings-page__row select {
+    border-color: rgba(246, 246, 246, 0.2);
+    background-color: #1f1f1f98;
+    color: #f6f6f6;
+  }
+
+  .settings-page__toast {
+    background: rgba(76, 175, 80, 0.2);
+    color: #bde5bf;
+  }
+
+  .settings-page__toast--error {
+    background: rgba(224, 80, 80, 0.2);
+    color: #f2b8b8;
+  }
+}
