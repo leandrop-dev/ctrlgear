@@ -1,3 +1,5 @@
+mod chatmix_commands;
+mod chatmix_sinks;
 mod commands;
 mod config;
 mod device_commands;
@@ -5,13 +7,14 @@ mod events;
 mod notifications;
 mod settings_commands;
 
+use chatmix_sinks::ChatMixSinksStatus;
 use config::Settings;
-use events::DeviceListUpdated;
+use events::{ChatMixSinksStatusChanged, DeviceListUpdated};
 use notifications::BatteryState;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{mpsc, Mutex};
 use std::time::Duration;
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 use tauri_specta::{collect_commands, collect_events, Event};
 
 /// In-memory settings shared between every `settings_commands::save_*`
@@ -39,6 +42,13 @@ impl PollIntervalHandle {
     pub(crate) fn set_minutes(&self, minutes: u32) {
         let _ = self.0.send(Duration::from_secs(minutes as u64 * 60));
     }
+}
+
+/// ChatMix worker command channel, shutdown signal, and last-known status.
+pub(crate) struct ChatMixState {
+    pub(crate) tx: mpsc::Sender<chatmix_sinks::WorkerCommand>,
+    pub(crate) shutdown_rx: Mutex<mpsc::Receiver<()>>,
+    pub(crate) status: Mutex<ChatMixSinksStatus>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -70,8 +80,10 @@ pub fn run() {
             settings_commands::save_notification_persistent,
             settings_commands::save_notification_sound,
             settings_commands::preview_notification_sound,
+            chatmix_commands::get_chatmix_sinks_status,
+            chatmix_commands::set_chatmix_sinks_enabled,
         ])
-        .events(collect_events![DeviceListUpdated]);
+        .events(collect_events![DeviceListUpdated, ChatMixSinksStatusChanged]);
 
     #[cfg(debug_assertions)]
     builder
@@ -87,7 +99,8 @@ pub fn run() {
             .build(),
     );
 
-    app.invoke_handler(builder.invoke_handler())
+    let tauri_app = app
+        .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
 
@@ -98,11 +111,39 @@ pub fn run() {
             app.manage(BatteryTrackerState(Mutex::new(HashMap::new())));
             app.manage(PollIntervalHandle(poll_interval_tx));
 
+            let chatmix_app_handle = app.handle().clone();
+            let (chatmix_tx, chatmix_shutdown_rx) = chatmix_sinks::spawn(move |status| {
+                let chatmix_state = chatmix_app_handle.state::<ChatMixState>();
+                *chatmix_state.status.lock().unwrap_or_else(|e| e.into_inner()) = status.clone();
+                if let Err(e) = ChatMixSinksStatusChanged(status).emit(&chatmix_app_handle) {
+                    eprintln!("Failed to emit chatmix-sinks-status-changed: {e}");
+                }
+            });
+            app.manage(ChatMixState {
+                tx: chatmix_tx.clone(),
+                shutdown_rx: Mutex::new(chatmix_shutdown_rx),
+                status: Mutex::new(ChatMixSinksStatus::Inactive),
+            });
+            if settings.chatmix_sinks_enabled {
+                let _ = chatmix_tx.send(chatmix_sinks::WorkerCommand::Enable);
+            }
+
             spawn_poll_loop(app.handle().clone(), poll_interval_rx);
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    tauri_app.run(|app_handle, event| {
+        if let RunEvent::Exit = event {
+            let chatmix_state = app_handle.state::<ChatMixState>();
+            let _ = chatmix_state.tx.send(chatmix_sinks::WorkerCommand::Shutdown);
+            let shutdown_rx = chatmix_state.shutdown_rx.lock().unwrap_or_else(|e| e.into_inner());
+            if shutdown_rx.recv_timeout(Duration::from_secs(6)).is_err() {
+                eprintln!("chatmix worker did not shut down cleanly within 6s");
+            }
+        }
+    });
 }
 
 /// Spawns the background loop that periodically refreshes the device list,

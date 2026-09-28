@@ -2593,6 +2593,7 @@ dependencies = [
  "dirs 7.0.0",
  "hidapi",
  "notify-rust",
+ "pipewire",
  "serde",
  "serde_json",
  "specta",

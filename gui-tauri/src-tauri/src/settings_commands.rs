@@ -10,13 +10,24 @@ use tauri::State;
 /// Mutates a copy of the in-memory settings with `mutate`, persists that copy
 /// on a blocking task via `persist` (production callers pass [`config::save`];
 /// tests inject a temp-path save so they never touch the real config file),
-/// then commits it to `state`. Never holds `state`'s lock across the await —
-/// each `.lock()` is confined to its own statement. Shared by every `save_*`
-/// command below.
-async fn save_with(
+/// then commits it to `state`. Each `state.current` lock is confined to its
+/// own statement; `state.save_lock` is held across the persist so overlapping
+/// saves serialize. Shared by every `save_*` command below.
+pub(crate) async fn save_with(
     state: &SettingsState,
     persist: impl FnOnce(&Settings) -> std::io::Result<()> + Send + 'static,
     mutate: impl FnOnce(&mut Settings),
+) -> Result<Settings, String> {
+    save_with_then(state, persist, mutate, |_| {}).await
+}
+
+/// [`save_with`], then runs `on_saved` before releasing the save lock, so
+/// side effects of overlapping saves apply in the same order they persisted.
+pub(crate) async fn save_with_then(
+    state: &SettingsState,
+    persist: impl FnOnce(&Settings) -> std::io::Result<()> + Send + 'static,
+    mutate: impl FnOnce(&mut Settings),
+    on_saved: impl FnOnce(&Settings),
 ) -> Result<Settings, String> {
     let _save_guard = state.save_lock.lock().await;
     let mut settings = current_settings(state);
@@ -29,6 +40,7 @@ async fn save_with(
         .map_err(|e| e.to_string())?;
 
     *state.current.lock().unwrap_or_else(|e| e.into_inner()) = settings;
+    on_saved(&settings);
     Ok(settings)
 }
 
@@ -124,6 +136,25 @@ mod tests {
         assert_eq!(state.current.lock().unwrap().poll_interval_minutes, 42);
         assert_eq!(config::load_from(Some(path.clone())).poll_interval_minutes, 42);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn on_saved_runs_while_save_lock_is_held() {
+        let path = std::env::temp_dir().join("ctrlgear-test-settings-commands-lock-held").join("config.toml");
+        let _ = std::fs::remove_file(&path);
+        let state = SettingsState::new(Settings::default());
+        let persist_path = path.clone();
+
+        let lock_was_held = std::cell::Cell::new(false);
+        tauri::async_runtime::block_on(save_with_then(
+            &state,
+            move |s| config::save_to(Some(persist_path), s),
+            |s| s.poll_interval_minutes = 5,
+            |_| lock_was_held.set(state.save_lock.try_lock().is_err()),
+        ))
+        .unwrap();
+        let _ = std::fs::remove_file(&path);
+        assert!(lock_was_held.get());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { commands, type Settings, type SoundChoice, type TrayIconStyle } from "../bindings";
+import { commands, events, type ChatMixSinksStatus, type Settings, type SoundChoice, type TrayIconStyle } from "../bindings";
 import { parsePollIntervalMinutes } from "../lib/pollIntervalInput";
 import "../styles/SettingsPage.css";
 
@@ -29,6 +29,22 @@ function SaveToast({ status }: { status: SaveStatus }) {
   );
 }
 
+/** Live status line for the ChatMix-sinks worker; hidden while inactive. */
+function ChatMixStatusLine({ status }: { status: ChatMixSinksStatus | null }) {
+  if (status === null || status.status === "inactive") return null;
+  if (status.status === "waitingForDevice") {
+    return <p className="settings-page__status">Waiting for a ChatMix-capable device…</p>;
+  }
+  if (status.status === "active") {
+    return <p className="settings-page__status">Routing ChatMix dial to virtual sinks.</p>;
+  }
+  return (
+    <p className="settings-page__status settings-page__status--error" role="alert">
+      {status.message}
+    </p>
+  );
+}
+
 export function SettingsPage() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -38,6 +54,8 @@ export function SettingsPage() {
   const [savingPersistent, setSavingPersistent] = useState(false);
   const [savingSound, setSavingSound] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [chatmixStatus, setChatmixStatus] = useState<ChatMixSinksStatus | null>(null);
+  const [savingChatmix, setSavingChatmix] = useState(false);
   const [status, setStatus] = useState<SaveStatus>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -55,6 +73,20 @@ export function SettingsPage() {
       });
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    commands.getChatmixSinksStatus().then((loaded) => {
+      if (!cancelled) setChatmixStatus(loaded);
+    });
+    const unlisten = events.chatmixSinksStatusChanged.listen((event) => {
+      if (!cancelled) setChatmixStatus(event.payload);
+    });
+    return () => {
+      cancelled = true;
+      void unlisten.then((f) => f());
     };
   }, []);
 
@@ -128,6 +160,17 @@ export function SettingsPage() {
       showToast({ ok: false, message: `Failed to save: ${String(e)}` });
     } finally {
       setSavingSound(false);
+    }
+  };
+
+  const handleToggleChatmix = async (checked: boolean) => {
+    setSavingChatmix(true);
+    try {
+      applySaveResult(await commands.setChatmixSinksEnabled(checked));
+    } catch (e) {
+      showToast({ ok: false, message: `Failed to save: ${String(e)}` });
+    } finally {
+      setSavingChatmix(false);
     }
   };
 
@@ -242,6 +285,25 @@ export function SettingsPage() {
             {previewing ? "Playing…" : "▶ Preview"}
           </button>
         </div>
+      </div>
+
+      <div className="settings-page__section">
+        <h2>ChatMix sinks</h2>
+        <p className="settings-page__help">
+          Routes a connected headset's ChatMix dial to two virtual PipeWire sinks ("CtrlGear Game" / "CtrlGear Chat").
+        </p>
+        <div className="settings-page__row">
+          <label>
+            <input
+              type="checkbox"
+              checked={settings.chatmix_sinks_enabled ?? false}
+              disabled={savingChatmix}
+              onChange={(e) => void handleToggleChatmix(e.target.checked)}
+            />
+            Enable ChatMix sinks
+          </label>
+        </div>
+        <ChatMixStatusLine status={chatmixStatus} />
       </div>
 
       <SaveToast status={status} />

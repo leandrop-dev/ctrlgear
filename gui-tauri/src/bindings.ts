@@ -129,10 +129,21 @@ export const commands = {
 	 *  `preview_notification_sound`.
 	 */
 	previewNotificationSound: (sound: SoundChoice) => typedError<null, string>(__TAURI_INVOKE("preview_notification_sound", { sound })),
+	/**
+	 *  Reads the worker's last-known status. Mutex read only — never touches HID
+	 *  or PipeWire directly.
+	 */
+	getChatmixSinksStatus: () => __TAURI_INVOKE<ChatMixSinksStatus>("get_chatmix_sinks_status"),
+	/**
+	 *  Toggles the ChatMix-sinks worker on/off and persists the choice. Mirrors
+	 *  the `save_*` commands in `settings_commands.rs`.
+	 */
+	setChatmixSinksEnabled: (enabled: boolean) => typedError<Settings, string>(__TAURI_INVOKE("set_chatmix_sinks_enabled", { enabled })),
 };
 
 /** Events */
 export const events = {
+	chatmixSinksStatusChanged: makeEvent<ChatMixSinksStatusChanged>("chatmix-sinks-status-changed"),
 	deviceListUpdated: makeEvent<DeviceListUpdated>("device-list-updated"),
 };
 
@@ -149,6 +160,15 @@ export type ButtonActionChoice = {
 	keyword: string,
 	label: string,
 };
+
+/**
+ *  The ChatMix worker's current status, pushed to the frontend via
+ *  [`crate::events::ChatMixSinksStatusChanged`].
+ */
+export type ChatMixSinksStatus = { status: "inactive" } | { status: "waitingForDevice" } | { status: "active" } | { status: "failed"; message: string };
+
+/**  Pushed whenever the ChatMix worker's status changes. */
+export type ChatMixSinksStatusChanged = ChatMixSinksStatus;
 
 /**  ChatMix (game/chat volume balance) dial position for wireless headsets. */
 export type ChatMixStatus = {
