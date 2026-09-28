@@ -35,13 +35,15 @@ fn discover_with(api: Result<HidApi, HidError>) -> Result<Vec<DeviceSummary>, St
         .map_err(|e| format!("Failed to open HID API: {e}"))
 }
 
-/// Lists every connected SteelSeries device, supported or not. Errors when
-/// the HID subsystem itself can't be opened, so the UI can tell that apart
-/// from "no devices connected".
+/// Lists every connected SteelSeries device, supported or not, and refreshes
+/// the tray menu's battery rows. Errors when the HID subsystem itself can't
+/// be opened, so the UI can tell that apart from "no devices connected".
 #[tauri::command]
 #[specta::specta]
-pub async fn list_devices() -> Result<Vec<DeviceSummary>, String> {
-    discover_devices_async().await
+pub async fn list_devices(app: tauri::AppHandle) -> Result<Vec<DeviceSummary>, String> {
+    let devices = discover_devices_async().await?;
+    crate::tray::refresh_menu(&app, &devices);
+    Ok(devices)
 }
 
 #[cfg(test)]

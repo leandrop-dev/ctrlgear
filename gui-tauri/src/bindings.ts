@@ -6,9 +6,9 @@ import * as __TAURI_EVENT from "@tauri-apps/api/event";
 /** Commands */
 export const commands = {
 	/**
-	 *  Lists every connected SteelSeries device, supported or not. Errors when
-	 *  the HID subsystem itself can't be opened, so the UI can tell that apart
-	 *  from "no devices connected".
+	 *  Lists every connected SteelSeries device, supported or not, and refreshes
+	 *  the tray menu's battery rows. Errors when the HID subsystem itself can't
+	 *  be opened, so the UI can tell that apart from "no devices connected".
 	 */
 	listDevices: () => typedError<DeviceSummary[], string>(__TAURI_INVOKE("list_devices")),
 	/**  Sets a device's DPI presets. Mirrors `gui/src/main.rs`'s `apply_dpi`. */
@@ -109,8 +109,8 @@ export const commands = {
 	 */
 	savePollInterval: (minutes: number) => typedError<Settings, string>(__TAURI_INVOKE("save_poll_interval", { minutes })),
 	/**
-	 *  Sets the tray icon's colored/monochrome style. Mirrors `gui/src/main.rs`'s
-	 *  `on_save_tray_icon_style`.
+	 *  Sets the tray icon's colored/monochrome style and applies it to the live
+	 *  tray icon. Mirrors `gui/src/main.rs`'s `on_save_tray_icon_style`.
 	 */
 	saveTrayIconStyle: (monochrome: boolean) => typedError<Settings, string>(__TAURI_INVOKE("save_tray_icon_style", { monochrome })),
 	/**

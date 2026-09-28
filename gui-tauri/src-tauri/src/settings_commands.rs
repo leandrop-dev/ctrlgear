@@ -4,6 +4,7 @@
 
 use crate::config::{self, Settings, SoundChoice, TrayIconStyle};
 use crate::notifications;
+use crate::tray;
 use crate::{PollIntervalHandle, SettingsState};
 use tauri::State;
 
@@ -72,14 +73,22 @@ pub async fn save_poll_interval(
     Ok(settings)
 }
 
-/// Sets the tray icon's colored/monochrome style. Mirrors `gui/src/main.rs`'s
-/// `on_save_tray_icon_style`.
+/// Sets the tray icon's colored/monochrome style and applies it to the live
+/// tray icon. Mirrors `gui/src/main.rs`'s `on_save_tray_icon_style`.
 #[tauri::command]
 #[specta::specta]
-pub async fn save_tray_icon_style(state: State<'_, SettingsState>, monochrome: bool) -> Result<Settings, String> {
-    save_with(state.inner(), config::save, move |s| {
-        s.tray_icon_style = if monochrome { TrayIconStyle::Monochrome } else { TrayIconStyle::Colored };
-    })
+pub async fn save_tray_icon_style(
+    state: State<'_, SettingsState>,
+    app: tauri::AppHandle,
+    monochrome: bool,
+) -> Result<Settings, String> {
+    let style = if monochrome { TrayIconStyle::Monochrome } else { TrayIconStyle::Colored };
+    save_with_then(
+        state.inner(),
+        config::save,
+        move |s| s.tray_icon_style = style,
+        move |_| tray::apply_icon_style(&app, style),
+    )
     .await
 }
 

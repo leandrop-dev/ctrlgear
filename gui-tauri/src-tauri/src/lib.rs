@@ -6,6 +6,7 @@ mod device_commands;
 mod events;
 mod notifications;
 mod settings_commands;
+mod tray;
 
 use chatmix_sinks::ChatMixSinksStatus;
 use config::Settings;
@@ -14,7 +15,7 @@ use notifications::BatteryState;
 use std::collections::HashMap;
 use std::sync::{mpsc, Mutex};
 use std::time::Duration;
-use tauri::{Manager, RunEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 use tauri_specta::{collect_commands, collect_events, Event};
 
 /// In-memory settings shared between every `settings_commands::save_*`
@@ -50,6 +51,9 @@ pub(crate) struct ChatMixState {
     pub(crate) shutdown_rx: Mutex<mpsc::Receiver<()>>,
     pub(crate) status: Mutex<ChatMixSinksStatus>,
 }
+
+/// The tray icon built once in `setup`; `None` if tray build failed.
+pub(crate) struct TrayState(pub(crate) Option<tauri::tray::TrayIcon<tauri::Wry>>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -128,6 +132,41 @@ pub fn run() {
                 let _ = chatmix_tx.send(chatmix_sinks::WorkerCommand::Enable);
             }
 
+            let theme = tray::main_window_theme(app.handle());
+            match tray::build(app.handle(), settings.tray_icon_style, theme) {
+                Ok(tray) => {
+                    app.manage(TrayState(Some(tray)));
+                }
+                Err(e) => {
+                    eprintln!("Failed to build tray icon: {e}");
+                    app.manage(TrayState(None));
+                }
+            }
+
+            if let Some(main_window) = app.get_webview_window("main") {
+                let handle = app.handle().clone();
+                main_window.on_window_event(move |event| match event {
+                    WindowEvent::CloseRequested { api, .. } => {
+                        if handle.state::<TrayState>().0.is_some() {
+                            api.prevent_close();
+                            if let Some(window) = handle.get_webview_window("main") {
+                                if let Err(e) = window.hide() {
+                                    eprintln!("Failed to hide main window: {e}");
+                                }
+                            }
+                        }
+                    }
+                    WindowEvent::ThemeChanged(theme) => {
+                        let settings_state = handle.state::<SettingsState>();
+                        let style = settings_state.current.lock().unwrap_or_else(|e| e.into_inner()).tray_icon_style;
+                        if style == config::TrayIconStyle::Monochrome {
+                            tray::apply_icon(&handle, style, *theme);
+                        }
+                    }
+                    _ => {}
+                });
+            }
+
             spawn_poll_loop(app.handle().clone(), poll_interval_rx);
             Ok(())
         })
@@ -182,6 +221,7 @@ fn spawn_poll_loop(app: tauri::AppHandle, mut interval_rx: tokio::sync::watch::R
                         });
                     }
 
+                    tray::refresh_menu(&app, &devices);
                     if let Err(e) = DeviceListUpdated(devices).emit(&app) {
                         eprintln!("Failed to emit device-list-updated: {e}");
                     }
