@@ -865,8 +865,7 @@ mod tests {
         assert_eq!(dpi_mapping_range(mapping), (100, 18000, 100));
     }
 
-    /// Guards the "in steps of N" claim shown as DPI help text in the GUI
-    /// (`gui/src/main.rs::dpi_help_text`).
+    /// Guards the "in steps of N" claim shown as DPI help text in the GUI.
     #[test]
     fn dpi_mapping_is_a_uniform_arithmetic_sequence_matching_its_step() {
         let mapping = RIVAL3_WIRELESS_PROFILE.dpi.unwrap().mapping;

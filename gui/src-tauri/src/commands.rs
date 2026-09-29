@@ -7,8 +7,7 @@ use std::sync::Mutex;
 
 /// Serializes every HID transaction (discover or device write) against the
 /// SteelSeries bus, so no two commands (or a command and the poll loop) ever
-/// talk to the bus at once. Mirrors `HID_BUS_LOCK` in the Slint GUI's
-/// `gui/src/main.rs`. Shared with [`crate::device_commands`].
+/// talk to the bus at once. Shared with [`crate::device_commands`].
 pub(crate) static HID_BUS_LOCK: Mutex<()> = Mutex::new(());
 
 /// Enumerates connected SteelSeries devices, opening a fresh [`HidApi`] and

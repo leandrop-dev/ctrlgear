@@ -11,13 +11,13 @@ export const commands = {
 	 *  be opened, so the UI can tell that apart from "no devices connected".
 	 */
 	listDevices: () => typedError<DeviceSummary[], string>(__TAURI_INVOKE("list_devices")),
-	/**  Sets a device's DPI presets. Mirrors `gui/src/main.rs`'s `apply_dpi`. */
+	/**  Sets a device's DPI presets. */
 	setDpi: (productId: number, values: number[]) => typedError<null, string>(__TAURI_INVOKE("set_dpi", { productId, values })),
-	/**  Sets a device's polling rate. Mirrors `gui/src/main.rs`'s `apply_polling_rate`. */
+	/**  Sets a device's polling rate. */
 	setPollingRate: (productId: number, hz: number) => typedError<null, string>(__TAURI_INVOKE("set_polling_rate", { productId, hz })),
 	/**
 	 *  Sets a device's button mapping. `actions` is one keyword per
-	 *  [`Button::all`] slot. Mirrors `gui/src/main.rs`'s `apply_button_mapping`.
+	 *  [`Button::all`] slot.
 	 */
 	setButtonMapping: (productId: number, actions: string[]) => typedError<null, string>(__TAURI_INVOKE("set_button_mapping", { productId, actions })),
 	/**
@@ -30,72 +30,44 @@ export const commands = {
 	 *  rows. Pure/static — no HID access.
 	 */
 	buttonSlotLabels: () => __TAURI_INVOKE<string[]>("button_slot_labels"),
-	/**  Sets one RGB zone's color. Mirrors `gui/src/main.rs`'s `apply_rgb_zone_color`. */
+	/**  Sets one RGB zone's color. */
 	setRgbZone: (productId: number, zone: number, hexColor: string) => typedError<null, string>(__TAURI_INVOKE("set_rgb_zone", { productId, zone, hexColor })),
-	/**
-	 *  Sets a device's RGB LED brightness (0-100). Mirrors `gui/src/main.rs`'s
-	 *  `apply_rgb_brightness`.
-	 */
+	/**  Sets a device's RGB LED brightness (0-100). */
 	setRgbBrightness: (productId: number, level: number) => typedError<null, string>(__TAURI_INVOKE("set_rgb_brightness", { productId, level })),
 	/**
-	 *  Enables the RGB rainbow effect across every zone. Mirrors
-	 *  `gui/src/main.rs`'s `apply_rgb_rainbow(product_id, "all")` — there's no
-	 *  direct "off" command, so the frontend shows an explanatory message
-	 *  instead of calling this when the rainbow checkbox is unchecked.
+	 *  Enables the RGB rainbow effect across every zone. There's no direct
+	 *  "off" command, so the frontend shows an explanatory message instead of
+	 *  calling this when the rainbow checkbox is unchecked.
 	 */
 	setRgbRainbow: (productId: number) => typedError<null, string>(__TAURI_INVOKE("set_rgb_rainbow", { productId })),
-	/**
-	 *  Sets a device's default (startup) lighting. Mirrors `gui/src/main.rs`'s
-	 *  `apply_rgb_default_lighting`.
-	 */
+	/**  Sets a device's default (startup) lighting. */
 	setRgbDefaultLighting: (productId: number, choice: string) => typedError<null, string>(__TAURI_INVOKE("set_rgb_default_lighting", { productId, choice })),
-	/**
-	 *  Sets a headset's sidetone (mic monitoring) level (0-3, Off/Low/Medium/High).
-	 *  Mirrors `gui/src/main.rs`'s `apply_sidetone`.
-	 */
+	/**  Sets a headset's sidetone (mic monitoring) level (0-3, Off/Low/Medium/High). */
 	setSidetone: (productId: number, level: number) => typedError<null, string>(__TAURI_INVOKE("set_sidetone", { productId, level })),
-	/**
-	 *  Sets a headset's mic-mute LED brightness (0-3, off to max). Mirrors
-	 *  `gui/src/main.rs`'s `apply_mic_mute_led_brightness`.
-	 */
+	/**  Sets a headset's mic-mute LED brightness (0-3, off to max). */
 	setMicMuteLed: (productId: number, level: number) => typedError<null, string>(__TAURI_INVOKE("set_mic_mute_led", { productId, level })),
-	/**
-	 *  Sets a headset's microphone input volume (0-7, off to max). Mirrors
-	 *  `gui/src/main.rs`'s `apply_mic_volume`.
-	 */
+	/**  Sets a headset's microphone input volume (0-7, off to max). */
 	setMicVolume: (productId: number, level: number) => typedError<null, string>(__TAURI_INVOKE("set_mic_volume", { productId, level })),
 	/**
 	 *  Applies one of a headset's 4 built-in equalizer presets (Flat/Bass/Focus/
-	 *  Smiley, in that index order) — no manual per-band sliders, matching the
-	 *  Slint app's shipped scope. Mirrors `gui/src/main.rs`'s `apply_equalizer_preset`.
+	 *  Smiley, in that index order) — no manual per-band sliders.
 	 */
 	setEqualizerPreset: (productId: number, preset: number) => typedError<null, string>(__TAURI_INVOKE("set_equalizer_preset", { productId, preset })),
 	/**
 	 *  Sets a headset's auto-sleep timer (minutes of inactivity, 0-255; `0`
-	 *  disables it). Mirrors `gui/src/main.rs`'s `apply_sleep_timer`.
+	 *  disables it).
 	 */
 	setSleepTimer: (productId: number, minutes: number) => typedError<null, string>(__TAURI_INVOKE("set_sleep_timer", { productId, minutes })),
-	/**
-	 *  Toggles a headset's output volume limiter. Mirrors `gui/src/main.rs`'s
-	 *  `apply_volume_limiter`.
-	 */
+	/**  Toggles a headset's output volume limiter. */
 	setVolumeLimiter: (productId: number, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_volume_limiter", { productId, enabled })),
-	/**
-	 *  Toggles whether a headset turns Bluetooth on when it powers on. Mirrors
-	 *  `gui/src/main.rs`'s `apply_bluetooth_power_on`.
-	 */
+	/**  Toggles whether a headset turns Bluetooth on when it powers on. */
 	setBluetoothPowerOn: (productId: number, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_bluetooth_power_on", { productId, enabled })),
 	/**
 	 *  Sets a headset's Bluetooth call-volume mode (`0` off, `1` lower game
-	 *  volume, `2` mute game during calls). Mirrors `gui/src/main.rs`'s
-	 *  `apply_bluetooth_call_volume`.
+	 *  volume, `2` mute game during calls).
 	 */
 	setBluetoothCallVolume: (productId: number, mode: number) => typedError<null, string>(__TAURI_INVOKE("set_bluetooth_call_volume", { productId, mode })),
-	/**
-	 *  Reads a device's firmware version. Read-only — mirrors the CLI's
-	 *  `Commands::Info` firmware-version read (`cli/src/main.rs`); the Slint app
-	 *  never displayed this itself.
-	 */
+	/**  Reads a device's firmware version. Read-only. */
 	getFirmwareVersion: (productId: number) => typedError<string, string>(__TAURI_INVOKE("get_firmware_version", { productId })),
 	/**
 	 *  Returns the current in-memory settings, loaded once at startup and kept in
@@ -104,29 +76,21 @@ export const commands = {
 	getSettings: () => __TAURI_INVOKE<Settings>("get_settings"),
 	/**
 	 *  Sets the battery-poll interval (clamped to 1-120 minutes, matching the
-	 *  frontend's own bounds) and reconfigures the running poll loop. Mirrors
-	 *  `gui/src/main.rs`'s `on_save_poll_interval`.
+	 *  frontend's own bounds) and reconfigures the running poll loop.
 	 */
 	savePollInterval: (minutes: number) => typedError<Settings, string>(__TAURI_INVOKE("save_poll_interval", { minutes })),
 	/**
 	 *  Sets the tray icon's colored/monochrome style and applies it to the live
-	 *  tray icon. Mirrors `gui/src/main.rs`'s `on_save_tray_icon_style`.
+	 *  tray icon.
 	 */
 	saveTrayIconStyle: (monochrome: boolean) => typedError<Settings, string>(__TAURI_INVOKE("save_tray_icon_style", { monochrome })),
-	/**
-	 *  Sets whether a low-battery notification stays until manually dismissed.
-	 *  Mirrors `gui/src/main.rs`'s `on_save_notification_persistent`.
-	 */
+	/**  Sets whether a low-battery notification stays until manually dismissed. */
 	saveNotificationPersistent: (persistent: boolean) => typedError<Settings, string>(__TAURI_INVOKE("save_notification_persistent", { persistent })),
-	/**
-	 *  Sets the sound played by a low-battery notification. Mirrors
-	 *  `gui/src/main.rs`'s `on_save_notification_sound`.
-	 */
+	/**  Sets the sound played by a low-battery notification. */
 	saveNotificationSound: (sound: SoundChoice) => typedError<Settings, string>(__TAURI_INVOKE("save_notification_sound", { sound })),
 	/**
 	 *  Fires a short-lived preview notification for `sound`, off the main thread
-	 *  since `notify-rust`'s `show()` blocks on D-Bus. Mirrors `gui/src/main.rs`'s
-	 *  `preview_notification_sound`.
+	 *  since `notify-rust`'s `show()` blocks on D-Bus.
 	 */
 	previewNotificationSound: (sound: SoundChoice) => typedError<null, string>(__TAURI_INVOKE("preview_notification_sound", { sound })),
 	/**

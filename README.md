@@ -45,10 +45,11 @@ This builds the whole workspace. The CLI binary will be available at `target/rel
 ### Install (CLI + GUI + udev rule)
 
 ```bash
+make build          # as your user — builds the CLI, frontend, and GUI
 sudo make install
 ```
 
-Installs both the `ctrlgear-cli` binary and the `ctrlgear` GUI (with its desktop entry and icon) to `/usr/local/bin`/`/usr/local/share`, plus the udev rule to `/etc/udev/rules.d/`, then reloads udev — one command instead of the manual steps above. `sudo make uninstall` reverses it. Want just one? `sudo make install-cli` or `sudo make install-gui` (with matching `uninstall-cli`/`uninstall-gui`). Override `PREFIX`, `DATADIR`, or `UDEV_RULES_DIR` if you need a different layout.
+Build first as your normal user: the install targets only copy prebuilt artifacts, so running the build under `sudo` isn't needed (and would leave root-owned files in `target/` and `gui/`). Installs both the `ctrlgear-cli` binary and the `ctrlgear` GUI (with its desktop entry and icon) to `/usr/local/bin`/`/usr/local/share`, plus the udev rule to `/etc/udev/rules.d/`, then reloads udev — one command instead of the manual steps above. `sudo make uninstall` reverses it. Want just one? `make build-cli && sudo make install-cli` or `make build-gui && sudo make install-gui` (with matching `uninstall-cli`/`uninstall-gui`). Override `PREFIX`, `DATADIR`, or `UDEV_RULES_DIR` if you need a different layout.
 
 ### Arch Linux / CachyOS (PKGBUILD)
 
@@ -56,7 +57,7 @@ Installs both the `ctrlgear-cli` binary and the `ctrlgear` GUI (with its desktop
 makepkg -si
 ```
 
-Builds and installs `ctrlgear-cli` as a proper pacman package (binary in `/usr/bin`, udev rule in `/usr/lib/udev/rules.d/`, license and docs under `/usr/share`), so `pacman -R ctrlgear-cli` cleanly removes everything, including the udev rule.
+Builds and installs the `ctrlgear` pacman package — `ctrlgear-cli` and the `ctrlgear` GUI in `/usr/bin`, the desktop entry and icon, the udev rule in `/usr/lib/udev/rules.d/`, license and docs under `/usr/share` — so `pacman -R ctrlgear` cleanly removes everything, including the udev rule.
 
 ## Usage
 
@@ -101,13 +102,15 @@ ctrlgear-cli buttons "button6=disabled"
 
 ## GUI
 
-A desktop GUI lives in `gui/`, built with [Slint](https://slint.dev). It shares all device/protocol logic with the CLI via the `ctrlgear-core` library crate — no duplicated HID handling.
+A desktop GUI lives in `gui/`, built with [Tauri](https://tauri.app) — a React + TypeScript frontend (`gui/src/`) talking over Tauri's IPC to a Rust backend (`gui/src-tauri/`). It shares all device/protocol logic with the CLI via the `ctrlgear-core` library crate — no duplicated HID handling.
 
 ```bash
-cargo run --release -p ctrlgear-gui
+cd gui && npm install && npm run tauri dev
 ```
 
-Sidebar + main content layout: a device list (name, battery, supported/unsupported) with a detail page per device for settings (currently DPI, for devices that support it). `sudo make install` (or `install-gui` alone) installs it with its desktop entry and icon — required on Wayland, since an app can't set its own taskbar/title-bar icon at runtime there; the desktop environment resolves it from the installed `.desktop` file instead. Not yet packaged by the PKGBUILD (CLI-only).
+The app sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` automatically on Linux (works around a WebKitGTK/Wayland rendering issue), so no extra environment setup is needed to run it. For a release build, use `make build-gui` (builds the frontend, then the Tauri binary) then `sudo make install-gui` to install it.
+
+Sidebar + main content layout: a device list (name, battery, supported/unsupported) with a detail page per device for settings (currently DPI, for devices that support it). `sudo make install` (or `install-gui` alone, after building) installs it with its desktop entry and icon — required on Wayland, since an app can't set its own taskbar/title-bar icon at runtime there; the desktop environment resolves it from the installed `.desktop` file instead.
 
 See [BUTTON_MAPPING.md](BUTTON_MAPPING.md) for detailed button mapping documentation.
 
@@ -129,10 +132,23 @@ ctrlgear/
 │           └── arctis_nova_7.rs      # Arctis Nova 7 Wireless implementation (battery only)
 ├── cli/                             # ctrlgear-cli: command-line interface (clap)
 │   └── src/main.rs
-├── gui/                             # ctrlgear: desktop GUI (Slint)
-│   ├── build.rs
-│   ├── ui/main.slint
-│   ├── src/main.rs
+├── gui/                             # ctrlgear: desktop GUI (Tauri)
+│   ├── src/                          # React + TypeScript frontend
+│   │   ├── main.tsx
+│   │   ├── App.tsx
+│   │   ├── components/               # page components (device list, detail, settings)
+│   │   ├── lib/                      # input parsing / device-label helpers
+│   │   └── bindings.ts               # generated Tauri command/type bindings
+│   ├── src-tauri/                    # Rust backend
+│   │   ├── src/
+│   │   │   ├── lib.rs
+│   │   │   ├── commands.rs           # device discovery
+│   │   │   ├── device_commands.rs    # DPI/polling-rate/button/RGB/etc. write commands
+│   │   │   ├── settings_commands.rs  # settings read/persist commands
+│   │   │   ├── notifications.rs      # low-battery + preview desktop notifications
+│   │   │   ├── tray.rs               # system tray icon and menu
+│   │   │   └── config.rs             # persisted `Settings`
+│   │   └── tauri.conf.json
 │   ├── assets/app-icon.svg          # original app icon (not SteelSeries branding)
 │   └── packaging/ctrlgear.desktop   # desktop entry (needed for the icon on Wayland)
 ├── udev/
@@ -160,7 +176,7 @@ All device/protocol logic, with no CLI or UI dependencies — shared by both `ct
 Command-line interface using `clap`; parses user input and calls into `ctrlgear-core`.
 
 ### 3. `ctrlgear` GUI (`gui/`)
-Desktop interface using [Slint](https://slint.dev); calls the same `ctrlgear-core` device traits as the CLI.
+Desktop interface using [Tauri](https://tauri.app) — a React + TypeScript frontend calling Rust IPC commands that use the same `ctrlgear-core` device traits as the CLI.
 
 ## Supported Devices
 

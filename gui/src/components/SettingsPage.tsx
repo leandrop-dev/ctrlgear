@@ -5,13 +5,13 @@ import "../styles/SettingsPage.css";
 
 type SaveStatus = { ok: boolean; message: string } | null;
 
-/** Matches `config::SoundChoice::default()` in `gui-tauri/src-tauri/src/config.rs`. */
+/** Matches `config::SoundChoice::default()` in `src-tauri/src/config.rs`. */
 const DEFAULT_SOUND: SoundChoice = "Default";
 
-/** Matches `config::TrayIconStyle::default()` in `gui-tauri/src-tauri/src/config.rs`. */
+/** Matches `config::TrayIconStyle::default()` in `src-tauri/src/config.rs`. */
 const DEFAULT_TRAY_ICON_STYLE: TrayIconStyle = "Colored";
 
-/** `gui/ui/main.slint`'s `notification-sound` `ComboBox` model, in the same order. */
+/** Notification-sound choices for the dropdown, in display order. */
 const SOUND_CHOICES: { value: SoundChoice; label: string }[] = [
   { value: "Default", label: "Default sound" },
   { value: "Silent", label: "Silent" },

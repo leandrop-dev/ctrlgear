@@ -7,7 +7,7 @@ import "../styles/DeviceDetailPage.css";
 
 type ApplyStatus = { ok: boolean; message: string } | null;
 
-/** Default button-mapping keyword for a slot before the user changes it, matching the Slint page's "Default" default. */
+/** Default button-mapping keyword for a slot before the user changes it. */
 const DEFAULT_BUTTON_ACTION = "default";
 
 function StatusLine({ status }: { status: ApplyStatus }) {
@@ -214,10 +214,10 @@ function ButtonMappingSection({ device }: { device: DeviceSummary }) {
   );
 }
 
-/** Slint's zone-color placeholder defaults (`gui/ui/main.slint`'s RGB section), by zone index. */
+/** Zone-color placeholder defaults for the RGB section, by zone index. */
 const RGB_ZONE_DEFAULT_COLORS = ["#ff0000", "#00ff00", "#0000ff"];
 const RGB_ZONE_DEBOUNCE_MS = 150;
-/** Matches Slint's `on_apply_rgb_rainbow` off-path message verbatim (`gui/src/main.rs`). */
+/** Explanatory message shown when the rainbow checkbox is unchecked. */
 const RGB_RAINBOW_OFF_MESSAGE =
   'Rainbow has no direct "off" command — set a zone color or default lighting to turn it off on the device.';
 
@@ -423,13 +423,13 @@ function RgbSection({ device }: { device: DeviceSummary }) {
   );
 }
 
-/** `gui/ui/main.slint`'s sidetone and mic-mute-LED `ComboBox` `model`s (identical 4-level scale). */
+/** Sidetone and mic-mute-LED choices (identical 4-level scale). */
 const LEVEL_0_TO_3_CHOICES = ["Off", "Low", "Medium", "High"];
-/** `gui/ui/main.slint`'s mic-volume `ComboBox` `model` (0-7, off to max). */
+/** Mic-volume choices (0-7, off to max). */
 const MIC_VOLUME_CHOICES = ["0", "1", "2", "3", "4", "5", "6", "7"];
-/** `gui/ui/main.slint`'s equalizer preset buttons, in `EQ_PRESETS` index order. */
+/** Equalizer preset buttons, in `EQ_PRESETS` index order. */
 const EQUALIZER_PRESETS = ["Flat", "Bass", "Focus", "Smiley"];
-/** `gui/ui/main.slint`'s Bluetooth call-volume `ComboBox` `model`. */
+/** Bluetooth call-volume choices. */
 const BLUETOOTH_CALL_VOLUME_CHOICES = ["Off", "Lower game volume", "Mute game during calls"];
 
 function SidetoneSection({ device }: { device: DeviceSummary }) {

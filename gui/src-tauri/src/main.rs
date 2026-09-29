@@ -7,5 +7,5 @@ fn main() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
-    gui_tauri_lib::run()
+    ctrlgear_gui_lib::run()
 }

@@ -8,7 +8,6 @@ const LOW_BATTERY_THRESHOLD: u8 = 25;
 const BATTERY_SWAP_JUMP_THRESHOLD: u8 = 15;
 
 /// Strips the redundant "SteelSeries" prefix from a device name for display.
-/// Mirrors `gui/src/main.rs`'s `display_name`.
 fn display_name(name: &str) -> &str {
     name.strip_prefix("SteelSeries ").unwrap_or(name)
 }
@@ -29,7 +28,7 @@ fn apply_sound(notification: &mut notify_rust::Notification, sound: SoundChoice)
 }
 
 /// Fires a short-lived preview notification for `sound`, so the user can hear
-/// it before applying. Mirrors `gui/src/main.rs`'s `preview_notification_sound`.
+/// it before applying.
 pub(crate) fn preview_sound(sound: SoundChoice) -> Result<(), String> {
     let mut notification = notify_rust::Notification::new();
     notification.summary("CtrlGear").body("Notification sound preview").timeout(notify_rust::Timeout::Milliseconds(3000));
@@ -45,7 +44,6 @@ pub(crate) struct BatteryState {
 /// Determines which devices should fire a low-battery notification this
 /// poll, updating `states` accordingly. Pure state-tracking logic with no
 /// I/O — the actual `notify-rust` call lives in [`fire_low_battery_notifications`].
-/// Mirrors `gui/src/main.rs`'s `low_battery_transitions`.
 pub(crate) fn low_battery_transitions(
     devices: &[DeviceSummary],
     states: &mut HashMap<u16, BatteryState>,
@@ -80,8 +78,7 @@ pub(crate) fn low_battery_transitions(
 /// `persistent`/`sound`. Takes owned data and holds no lock itself — callers
 /// must compute `transitions` under the battery-tracker lock, then drop that
 /// lock before calling this, and should run it on a blocking task since
-/// `notify-rust`'s `show()` blocks on D-Bus. Mirrors `gui/src/main.rs`'s
-/// `check_low_battery`.
+/// `notify-rust`'s `show()` blocks on D-Bus.
 pub(crate) fn fire_low_battery_notifications(transitions: Vec<(String, u8)>, persistent: bool, sound: SoundChoice) {
     for (name, level) in transitions {
         let mut notification = notify_rust::Notification::new();

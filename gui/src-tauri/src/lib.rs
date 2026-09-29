@@ -32,7 +32,7 @@ impl SettingsState {
 }
 
 /// Per-device low-battery notification state, tracked across polls so the
-/// same drop isn't notified twice. Mirrors `gui/src/main.rs`'s `battery_state`.
+/// same drop isn't notified twice.
 pub(crate) struct BatteryTrackerState(pub(crate) Mutex<HashMap<u16, BatteryState>>);
 
 /// Lets `settings_commands::save_poll_interval` reconfigure the running poll

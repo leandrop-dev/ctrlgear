@@ -1,7 +1,6 @@
 //! DPI, polling-rate, and button-mapping write commands, plus the static
 //! button-choice data the frontend needs to render the button-mapping
-//! dropdowns. Mirrors `gui/src/main.rs`'s `apply_dpi`/`apply_polling_rate`/
-//! `apply_button_mapping` and `BUTTON_ACTION_KEYWORDS`.
+//! dropdowns.
 
 use crate::commands::HID_BUS_LOCK;
 use ctrlgear_core::buttons::{Button, ButtonAction, ButtonMapping};
@@ -14,9 +13,8 @@ use ctrlgear_core::registry::{self, Device};
 use hidapi::HidApi;
 use std::str::FromStr;
 
-/// Keyword/label pairs for the button-mapping action dropdowns, in the same
-/// order as the `ComboBox` `model` in `gui/ui/main.slint`'s button-mapping
-/// section. Keywords must each parse via [`ButtonAction::from_str`].
+/// Keyword/label pairs for the button-mapping action dropdowns. Keywords
+/// must each parse via [`ButtonAction::from_str`].
 const BUTTON_ACTION_CHOICES: [(&str, &str); 11] = [
     ("disabled", "Disabled"),
     ("dpiswitch", "DPI Switch"),
@@ -31,8 +29,7 @@ const BUTTON_ACTION_CHOICES: [(&str, &str); 11] = [
     ("button6", "Button 6"),
 ];
 
-/// One label per physical button slot, in [`Button::all`] order. Matches
-/// `gui/ui/main.slint`'s button-row labels.
+/// One label per physical button slot, in [`Button::all`] order.
 const BUTTON_SLOT_LABELS: [&str; 6] = [
     "Button 1 (Left-Click)",
     "Button 2 (Right-Click)",
@@ -151,8 +148,8 @@ fn validate_default_lighting_choice(rgb: &RgbProfile, choice: &str) -> Result<()
 }
 
 /// Parses a `#rrggbb` (or bare `rrggbb`) hex color string, as typed into the
-/// RGB zone-color inputs. Ported from `gui/src/main.rs::parse_hex_color`,
-/// including its `is_ascii_hexdigit()` guard — without it, `hex.len() == 6`
+/// RGB zone-color inputs. Includes an `is_ascii_hexdigit()` guard — without
+/// it, `hex.len() == 6`
 /// (a *byte* length) can pass for a shorter multi-byte-UTF-8 string (e.g.
 /// "aµcde"), and the subsequent byte-index slicing then panics instead of
 /// erroring.
@@ -186,7 +183,7 @@ where
     .unwrap_or_else(|e| Err(format!("Device command task panicked: {e}")))
 }
 
-/// Sets a device's DPI presets. Mirrors `gui/src/main.rs`'s `apply_dpi`.
+/// Sets a device's DPI presets.
 #[tauri::command]
 #[specta::specta]
 pub async fn set_dpi(product_id: u16, values: Vec<u16>) -> Result<(), String> {
@@ -197,7 +194,7 @@ pub async fn set_dpi(product_id: u16, values: Vec<u16>) -> Result<(), String> {
     with_device(product_id, move |device| device.set_dpi(&values).map_err(|e| e.to_string())).await
 }
 
-/// Sets a device's polling rate. Mirrors `gui/src/main.rs`'s `apply_polling_rate`.
+/// Sets a device's polling rate.
 #[tauri::command]
 #[specta::specta]
 pub async fn set_polling_rate(product_id: u16, hz: u16) -> Result<(), String> {
@@ -210,7 +207,7 @@ pub async fn set_polling_rate(product_id: u16, hz: u16) -> Result<(), String> {
 }
 
 /// Sets a device's button mapping. `actions` is one keyword per
-/// [`Button::all`] slot. Mirrors `gui/src/main.rs`'s `apply_button_mapping`.
+/// [`Button::all`] slot.
 #[tauri::command]
 #[specta::specta]
 pub async fn set_button_mapping(product_id: u16, actions: Vec<String>) -> Result<(), String> {
@@ -228,7 +225,7 @@ pub async fn set_button_mapping(product_id: u16, actions: Vec<String>) -> Result
     with_device(product_id, move |device| device.set_button_mapping(&mapping).map_err(|e| e.to_string())).await
 }
 
-/// Sets one RGB zone's color. Mirrors `gui/src/main.rs`'s `apply_rgb_zone_color`.
+/// Sets one RGB zone's color.
 #[tauri::command]
 #[specta::specta]
 pub async fn set_rgb_zone(product_id: u16, zone: u8, hex_color: String) -> Result<(), String> {
@@ -240,8 +237,7 @@ pub async fn set_rgb_zone(product_id: u16, zone: u8, hex_color: String) -> Resul
     with_device(product_id, move |device| device.set_rgb_zone_color(zone, r, g, b).map_err(|e| e.to_string())).await
 }
 
-/// Sets a device's RGB LED brightness (0-100). Mirrors `gui/src/main.rs`'s
-/// `apply_rgb_brightness`.
+/// Sets a device's RGB LED brightness (0-100).
 #[tauri::command]
 #[specta::specta]
 pub async fn set_rgb_brightness(product_id: u16, level: u8) -> Result<(), String> {
@@ -253,10 +249,9 @@ pub async fn set_rgb_brightness(product_id: u16, level: u8) -> Result<(), String
     with_device(product_id, move |device| device.set_rgb_brightness(level).map_err(|e| e.to_string())).await
 }
 
-/// Enables the RGB rainbow effect across every zone. Mirrors
-/// `gui/src/main.rs`'s `apply_rgb_rainbow(product_id, "all")` — there's no
-/// direct "off" command, so the frontend shows an explanatory message
-/// instead of calling this when the rainbow checkbox is unchecked.
+/// Enables the RGB rainbow effect across every zone. There's no direct
+/// "off" command, so the frontend shows an explanatory message instead of
+/// calling this when the rainbow checkbox is unchecked.
 #[tauri::command]
 #[specta::specta]
 pub async fn set_rgb_rainbow(product_id: u16) -> Result<(), String> {
@@ -268,8 +263,7 @@ pub async fn set_rgb_rainbow(product_id: u16) -> Result<(), String> {
     with_device(product_id, move |device| device.set_rgb_rainbow_effect("all").map_err(|e| e.to_string())).await
 }
 
-/// Sets a device's default (startup) lighting. Mirrors `gui/src/main.rs`'s
-/// `apply_rgb_default_lighting`.
+/// Sets a device's default (startup) lighting.
 #[tauri::command]
 #[specta::specta]
 pub async fn set_rgb_default_lighting(product_id: u16, choice: String) -> Result<(), String> {
@@ -281,7 +275,6 @@ pub async fn set_rgb_default_lighting(product_id: u16, choice: String) -> Result
 }
 
 /// Sets a headset's sidetone (mic monitoring) level (0-3, Off/Low/Medium/High).
-/// Mirrors `gui/src/main.rs`'s `apply_sidetone`.
 #[tauri::command]
 #[specta::specta]
 pub async fn set_sidetone(product_id: u16, level: u8) -> Result<(), String> {
@@ -292,8 +285,7 @@ pub async fn set_sidetone(product_id: u16, level: u8) -> Result<(), String> {
     with_device(product_id, move |device| device.set_sidetone(level).map_err(|e| e.to_string())).await
 }
 
-/// Sets a headset's mic-mute LED brightness (0-3, off to max). Mirrors
-/// `gui/src/main.rs`'s `apply_mic_mute_led_brightness`.
+/// Sets a headset's mic-mute LED brightness (0-3, off to max).
 #[tauri::command]
 #[specta::specta]
 pub async fn set_mic_mute_led(product_id: u16, level: u8) -> Result<(), String> {
@@ -304,8 +296,7 @@ pub async fn set_mic_mute_led(product_id: u16, level: u8) -> Result<(), String> 
     with_device(product_id, move |device| device.set_mic_mute_led_brightness(level).map_err(|e| e.to_string())).await
 }
 
-/// Sets a headset's microphone input volume (0-7, off to max). Mirrors
-/// `gui/src/main.rs`'s `apply_mic_volume`.
+/// Sets a headset's microphone input volume (0-7, off to max).
 #[tauri::command]
 #[specta::specta]
 pub async fn set_mic_volume(product_id: u16, level: u8) -> Result<(), String> {
@@ -317,8 +308,7 @@ pub async fn set_mic_volume(product_id: u16, level: u8) -> Result<(), String> {
 }
 
 /// Applies one of a headset's 4 built-in equalizer presets (Flat/Bass/Focus/
-/// Smiley, in that index order) — no manual per-band sliders, matching the
-/// Slint app's shipped scope. Mirrors `gui/src/main.rs`'s `apply_equalizer_preset`.
+/// Smiley, in that index order) — no manual per-band sliders.
 #[tauri::command]
 #[specta::specta]
 pub async fn set_equalizer_preset(product_id: u16, preset: u8) -> Result<(), String> {
@@ -330,7 +320,7 @@ pub async fn set_equalizer_preset(product_id: u16, preset: u8) -> Result<(), Str
 }
 
 /// Sets a headset's auto-sleep timer (minutes of inactivity, 0-255; `0`
-/// disables it). Mirrors `gui/src/main.rs`'s `apply_sleep_timer`.
+/// disables it).
 #[tauri::command]
 #[specta::specta]
 pub async fn set_sleep_timer(product_id: u16, minutes: u8) -> Result<(), String> {
@@ -340,8 +330,7 @@ pub async fn set_sleep_timer(product_id: u16, minutes: u8) -> Result<(), String>
     with_device(product_id, move |device| device.set_sleep_timer(minutes).map_err(|e| e.to_string())).await
 }
 
-/// Toggles a headset's output volume limiter. Mirrors `gui/src/main.rs`'s
-/// `apply_volume_limiter`.
+/// Toggles a headset's output volume limiter.
 #[tauri::command]
 #[specta::specta]
 pub async fn set_volume_limiter(product_id: u16, enabled: bool) -> Result<(), String> {
@@ -351,8 +340,7 @@ pub async fn set_volume_limiter(product_id: u16, enabled: bool) -> Result<(), St
     with_device(product_id, move |device| device.set_volume_limiter(enabled).map_err(|e| e.to_string())).await
 }
 
-/// Toggles whether a headset turns Bluetooth on when it powers on. Mirrors
-/// `gui/src/main.rs`'s `apply_bluetooth_power_on`.
+/// Toggles whether a headset turns Bluetooth on when it powers on.
 #[tauri::command]
 #[specta::specta]
 pub async fn set_bluetooth_power_on(product_id: u16, enabled: bool) -> Result<(), String> {
@@ -363,8 +351,7 @@ pub async fn set_bluetooth_power_on(product_id: u16, enabled: bool) -> Result<()
 }
 
 /// Sets a headset's Bluetooth call-volume mode (`0` off, `1` lower game
-/// volume, `2` mute game during calls). Mirrors `gui/src/main.rs`'s
-/// `apply_bluetooth_call_volume`.
+/// volume, `2` mute game during calls).
 #[tauri::command]
 #[specta::specta]
 pub async fn set_bluetooth_call_volume(product_id: u16, mode: u8) -> Result<(), String> {
@@ -375,9 +362,7 @@ pub async fn set_bluetooth_call_volume(product_id: u16, mode: u8) -> Result<(), 
     with_device(product_id, move |device| device.set_bluetooth_call_volume(mode).map_err(|e| e.to_string())).await
 }
 
-/// Reads a device's firmware version. Read-only — mirrors the CLI's
-/// `Commands::Info` firmware-version read (`cli/src/main.rs`); the Slint app
-/// never displayed this itself.
+/// Reads a device's firmware version. Read-only.
 #[tauri::command]
 #[specta::specta]
 pub async fn get_firmware_version(product_id: u16) -> Result<String, String> {
@@ -393,7 +378,7 @@ mod tests {
     use ctrlgear_core::device::rival3_wireless::{PRODUCT_ID as RIVAL3_WIRELESS_PRODUCT_ID, RIVAL3_WIRELESS_PROFILE};
 
     #[test]
-    fn button_action_choices_has_11_entries_in_slint_order() {
+    fn button_action_choices_has_11_entries() {
         let choices = button_action_choices();
         assert_eq!(choices.len(), 11);
         assert_eq!(choices[0].keyword, "disabled");

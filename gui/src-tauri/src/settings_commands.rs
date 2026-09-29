@@ -1,6 +1,5 @@
 //! Settings-page commands: read/persist `Settings` fields, reconfigure the
-//! live poll loop, and preview a notification sound. Mirrors the
-//! Settings-page callbacks in `gui/src/main.rs`.
+//! live poll loop, and preview a notification sound.
 
 use crate::config::{self, Settings, SoundChoice, TrayIconStyle};
 use crate::notifications;
@@ -58,8 +57,7 @@ pub fn get_settings(state: State<'_, SettingsState>) -> Settings {
 }
 
 /// Sets the battery-poll interval (clamped to 1-120 minutes, matching the
-/// frontend's own bounds) and reconfigures the running poll loop. Mirrors
-/// `gui/src/main.rs`'s `on_save_poll_interval`.
+/// frontend's own bounds) and reconfigures the running poll loop.
 #[tauri::command]
 #[specta::specta]
 pub async fn save_poll_interval(
@@ -74,7 +72,7 @@ pub async fn save_poll_interval(
 }
 
 /// Sets the tray icon's colored/monochrome style and applies it to the live
-/// tray icon. Mirrors `gui/src/main.rs`'s `on_save_tray_icon_style`.
+/// tray icon.
 #[tauri::command]
 #[specta::specta]
 pub async fn save_tray_icon_style(
@@ -93,7 +91,6 @@ pub async fn save_tray_icon_style(
 }
 
 /// Sets whether a low-battery notification stays until manually dismissed.
-/// Mirrors `gui/src/main.rs`'s `on_save_notification_persistent`.
 #[tauri::command]
 #[specta::specta]
 pub async fn save_notification_persistent(
@@ -103,8 +100,7 @@ pub async fn save_notification_persistent(
     save_with(state.inner(), config::save, move |s| s.notification_persistent = persistent).await
 }
 
-/// Sets the sound played by a low-battery notification. Mirrors
-/// `gui/src/main.rs`'s `on_save_notification_sound`.
+/// Sets the sound played by a low-battery notification.
 #[tauri::command]
 #[specta::specta]
 pub async fn save_notification_sound(state: State<'_, SettingsState>, sound: SoundChoice) -> Result<Settings, String> {
@@ -112,8 +108,7 @@ pub async fn save_notification_sound(state: State<'_, SettingsState>, sound: Sou
 }
 
 /// Fires a short-lived preview notification for `sound`, off the main thread
-/// since `notify-rust`'s `show()` blocks on D-Bus. Mirrors `gui/src/main.rs`'s
-/// `preview_notification_sound`.
+/// since `notify-rust`'s `show()` blocks on D-Bus.
 #[tauri::command]
 #[specta::specta]
 pub async fn preview_notification_sound(sound: SoundChoice) -> Result<(), String> {
