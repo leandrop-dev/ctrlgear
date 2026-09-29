@@ -11,12 +11,14 @@ build: build-cli build-gui
 build-cli:
 	cargo build --release -p ctrlgear-cli
 
-# Slint's dependency tree is much heavier than the CLI's, hence the separate
-# build-cli/build-gui targets — but `make build`/`install`/`uninstall` cover
-# both by default so a plain `sudo make install` gives you either interface.
-# Use `install-cli`/`install-gui` directly if you only want one.
+# Temporary pointer at the in-progress Tauri app (gui-tauri/) for task 10
+# verification; task 11 makes this permanent when gui-tauri/ is renamed to
+# gui/ and the Slint app is removed. Builds the frontend first, then the
+# Tauri binary with the custom-protocol feature (required for a release
+# build launched directly, not via `tauri dev`).
 build-gui:
-	cargo build --release -p ctrlgear-gui
+	cd gui-tauri && npm ci && npm run build
+	cargo build --release -p gui-tauri --features gui-tauri/custom-protocol
 
 # Installs the CLI binary and udev rule (vendor-wide, covers every SteelSeries
 # device). Run as `sudo make install-cli` on the target machine. When
@@ -42,7 +44,7 @@ endif
 # entry and icon are required on Wayland, where an app can't set its window
 # icon at runtime; the desktop environment resolves it from these instead.
 install-gui: build-gui
-	install -Dm755 target/release/ctrlgear $(DESTDIR)$(BINDIR)/ctrlgear
+	install -Dm755 target/release/ctrlgear-tauri-dev $(DESTDIR)$(BINDIR)/ctrlgear
 	install -Dm644 gui/packaging/ctrlgear.desktop $(DESTDIR)$(DATADIR)/applications/ctrlgear.desktop
 	install -Dm644 gui/assets/app-icon.svg $(DESTDIR)$(DATADIR)/icons/hicolor/scalable/apps/ctrlgear.svg
 	install -Dm644 udev/70-steelseries.rules $(DESTDIR)$(UDEV_RULES_DIR)/70-steelseries.rules
