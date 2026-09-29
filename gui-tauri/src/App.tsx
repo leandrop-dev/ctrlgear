@@ -39,7 +39,7 @@ function App() {
   };
 
   return (
-    <>
+    <div className="app-shell">
       <nav className="app-nav">
         <button
           className={`app-nav__item${view === "devices" ? " app-nav__item--active" : ""}`}
@@ -54,8 +54,8 @@ function App() {
           Settings
         </button>
       </nav>
-      {renderPage()}
-    </>
+      <div className="app-shell__content">{renderPage()}</div>
+    </div>
   );
 }
 

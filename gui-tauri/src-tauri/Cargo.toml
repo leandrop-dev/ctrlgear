@@ -35,3 +35,6 @@ specta = { version = "2.0.0-rc.25", features = ["derive"] }
 specta-typescript = "0.0.12"
 tauri-specta = { version = "2.0.0-rc.25", features = ["derive", "typescript"] }
 tauri-plugin-mcp-bridge = "0.13"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"

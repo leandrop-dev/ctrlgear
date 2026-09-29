@@ -55,6 +55,23 @@ pub(crate) struct ChatMixState {
 /// The tray icon built once in `setup`; `None` if tray build failed.
 pub(crate) struct TrayState(pub(crate) Option<tauri::tray::TrayIcon<tauri::Wry>>);
 
+/// Applies the configured `minWidth`/`minHeight` to the webview's GTK container, since GTK counts client-side decorations against window geometry hints.
+#[cfg(target_os = "linux")]
+fn enforce_content_min_size(window: &tauri::WebviewWindow) {
+    use gtk::prelude::WidgetExt;
+
+    let Some(window_config) = window.config().app.windows.iter().find(|w| w.label == window.label()) else {
+        return;
+    };
+    let (Some(min_width), Some(min_height)) = (window_config.min_width, window_config.min_height) else {
+        return;
+    };
+    match window.default_vbox() {
+        Ok(vbox) => vbox.set_size_request(min_width.round() as i32, min_height.round() as i32),
+        Err(e) => eprintln!("Failed to apply minimum content size: {e}"),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri_specta::Builder::<tauri::Wry>::new()
@@ -144,6 +161,9 @@ pub fn run() {
             }
 
             if let Some(main_window) = app.get_webview_window("main") {
+                #[cfg(target_os = "linux")]
+                enforce_content_min_size(&main_window);
+
                 let handle = app.handle().clone();
                 main_window.on_window_event(move |event| match event {
                     WindowEvent::CloseRequested { api, .. } => {

@@ -2591,6 +2591,7 @@ version = "0.1.0"
 dependencies = [
  "ctrlgear-core",
  "dirs 7.0.0",
+ "gtk",
  "hidapi",
  "notify-rust",
  "pipewire",

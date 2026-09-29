@@ -99,6 +99,14 @@
   background: rgba(76, 175, 80, 0.15);
   border: 1px solid rgba(76, 175, 80, 0.4);
   color: #2f6b32;
+  box-sizing: border-box;
+  max-width: 280px;
+  max-height: 56px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .settings-page__toast--error {
